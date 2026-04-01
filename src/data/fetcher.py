@@ -292,9 +292,73 @@ def fetch_watchlist_data(symbols: list = None, period: str = DEFAULT_PERIOD,
     return data
 
 
+def _fetch_vix_from_web() -> float | None:
+    """Fetch latest India VIX value from investing.com or similar."""
+    import re
+    try:
+        # Try Google search for quick VIX value
+        url = "https://www.google.com/finance/quote/INDIAVIX:INDEXNSE"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        }
+        req = Request(url, headers=headers)
+        resp = urlopen(req, timeout=10)
+        html = resp.read().decode('utf-8')
+
+        price_match = re.search(r'data-last-price="([0-9,.]+)"', html)
+        if price_match:
+            return float(price_match.group(1).replace(',', ''))
+
+        price_match = re.search(r'class="YMlKec fxKbKc"[^>]*>([0-9,]+\.?\d*)', html)
+        if price_match:
+            return float(price_match.group(1).replace(',', ''))
+    except Exception:
+        pass
+
+    try:
+        # Fallback: try Yahoo Finance quote page directly
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?range=5d&interval=1d"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        req = Request(url, headers=headers)
+        resp = urlopen(req, timeout=10)
+        data = json.loads(resp.read().decode())
+        closes = data['chart']['result'][0]['indicators']['quote'][0]['close']
+        # Get last non-None value
+        valid = [c for c in closes if c is not None]
+        if valid:
+            return valid[-1]
+    except Exception:
+        pass
+
+    return None
+
+
 def fetch_vix() -> pd.DataFrame:
-    """Fetch India VIX data."""
-    return fetch_stock_data("^INDIAVIX", period="3mo", interval="1d")
+    """Fetch India VIX data with web fallback."""
+    df = fetch_stock_data("^INDIAVIX", period="3mo", interval="1d")
+
+    # Check if VIX data is stale and try web fallback
+    if not df.empty and len(df) > 0:
+        last_date = df.index[-1]
+        if hasattr(last_date, 'date'):
+            last_date = last_date.date()
+        today = datetime.now().date()
+        days_old = (today - last_date).days if hasattr(last_date, 'day') else 0
+
+        if days_old > 1:
+            vix_val = _fetch_vix_from_web()
+            if vix_val and vix_val > 0:
+                new_row = pd.DataFrame({
+                    'Open': [vix_val],
+                    'High': [vix_val],
+                    'Low': [vix_val],
+                    'Close': [vix_val],
+                    'Volume': [0],
+                }, index=pd.DatetimeIndex([pd.Timestamp(today)], name='Datetime'))
+                df = pd.concat([df, new_row])
+                print(f"   ✅ VIX patched with web value: {vix_val:.2f}")
+
+    return df
 
 
 def fetch_nifty_daily() -> pd.DataFrame:
