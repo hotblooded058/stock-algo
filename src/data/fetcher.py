@@ -23,7 +23,8 @@ from config.settings import WATCHLIST, DEFAULT_PERIOD, DEFAULT_INTERVAL, DAILY_I
 
 def _period_to_dates(period: str):
     """Convert period string like '3mo' to (start_date, end_date)."""
-    end = datetime.now()
+    # end date is tomorrow because Yahoo's end param is EXCLUSIVE
+    end = datetime.now() + timedelta(days=2)
     mappings = {
         '5d': 5, '1mo': 30, '3mo': 90, '6mo': 180, '1y': 365, '2y': 730
     }
@@ -366,10 +367,10 @@ def _fetch_vix_from_web() -> float | None:
 
 
 def fetch_vix() -> pd.DataFrame:
-    """Fetch India VIX data with web fallback."""
+    """Fetch India VIX data with multiple fallback strategies."""
     df = fetch_stock_data("^INDIAVIX", period="3mo", interval="1d")
 
-    # Check if VIX data is stale and try web fallback
+    # Check if VIX data is stale
     if not df.empty and len(df) > 0:
         last_date = df.index[-1]
         if hasattr(last_date, 'date'):
@@ -378,8 +379,46 @@ def fetch_vix() -> pd.DataFrame:
         days_old = (today - last_date).days if hasattr(last_date, 'day') else 0
 
         if days_old > 1:
-            vix_val = _fetch_vix_from_web()
-            if vix_val and vix_val > 0:
+            vix_val = None
+
+            # Strategy 1: Try yf.download with very recent range
+            try:
+                recent_start = (today - timedelta(days=10)).strftime('%Y-%m-%d')
+                recent_end = (today + timedelta(days=2)).strftime('%Y-%m-%d')
+                vix_recent = yf.download(
+                    "^INDIAVIX", start=recent_start, end=recent_end,
+                    interval="1d", progress=False, auto_adjust=True
+                )
+                if isinstance(vix_recent.columns, pd.MultiIndex):
+                    vix_recent.columns = vix_recent.columns.get_level_values(0)
+                if not vix_recent.empty:
+                    latest_vix_date = vix_recent.index[-1]
+                    if hasattr(latest_vix_date, 'date'):
+                        latest_vix_date = latest_vix_date.date()
+                    if (today - latest_vix_date).days <= days_old:
+                        # yf.download got newer data, use it
+                        vix_val = vix_recent['Close'].iloc[-1]
+                        print(f"   ✅ VIX from yf.download (recent): {vix_val:.2f}")
+            except Exception as e:
+                print(f"   yf.download recent VIX failed: {e}")
+
+            # Strategy 2: Try yf.Ticker with fast_info
+            if not vix_val:
+                try:
+                    vix_ticker = yf.Ticker("^INDIAVIX")
+                    fast = vix_ticker.fast_info
+                    if hasattr(fast, 'last_price') and fast.last_price:
+                        vix_val = fast.last_price
+                        print(f"   ✅ VIX from fast_info: {vix_val:.2f}")
+                except Exception:
+                    pass
+
+            # Strategy 3: Try web scraping
+            if not vix_val:
+                vix_val = _fetch_vix_from_web()
+
+            # Patch the dataframe if we got a value
+            if vix_val and 8 <= vix_val <= 80:
                 new_row = pd.DataFrame({
                     'Open': [vix_val],
                     'High': [vix_val],
@@ -388,7 +427,7 @@ def fetch_vix() -> pd.DataFrame:
                     'Volume': [0],
                 }, index=pd.DatetimeIndex([pd.Timestamp(today)], name='Datetime'))
                 df = pd.concat([df, new_row])
-                print(f"   ✅ VIX patched with web value: {vix_val:.2f}")
+                print(f"   ✅ VIX patched: {vix_val:.2f}")
 
     return df
 
