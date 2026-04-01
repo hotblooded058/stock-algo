@@ -1,0 +1,24 @@
+# Core
+yfinance>=0.2.31
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Technical Indicators
+ta>=0.11.0
+
+# Charts & Dashboard
+streamlit>=1.28.0
+plotly>=5.18.0
+
+# Alerts
+python-telegram-bot>=20.6
+
+# Database
+# SQLite is built into Python — no install needed
+
+# Scheduling
+apscheduler>=3.10.4
+
+# Sentiment (optional — Phase 4)
+# newspaper3k>=0.2.8
+# textblob>=0.17.1
