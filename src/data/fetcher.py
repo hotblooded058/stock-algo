@@ -293,37 +293,69 @@ def fetch_watchlist_data(symbols: list = None, period: str = DEFAULT_PERIOD,
 
 
 def _fetch_vix_from_web() -> float | None:
-    """Fetch latest India VIX value from investing.com or similar."""
+    """Fetch latest India VIX value from multiple web sources."""
     import re
+
+    sources = [
+        # Source 1: Google Finance
+        {
+            "url": "https://www.google.com/finance/quote/INDIAVIX:INDEXNSE",
+            "patterns": [
+                r'data-last-price="([0-9,.]+)"',
+                r'class="YMlKec fxKbKc"[^>]*>([0-9,]+\.?\d*)',
+            ]
+        },
+        # Source 2: Google search for India VIX
+        {
+            "url": "https://www.google.com/search?q=india+vix+today+nse",
+            "patterns": [
+                r'India VIX.*?([0-9]+\.[0-9]+)',
+                r'INDIA VIX.*?([0-9]+\.[0-9]+)',
+                r'>(\d{1,2}\.\d{2})<',  # VIX is typically 10-40 range
+            ]
+        },
+        # Source 3: Moneycontrol
+        {
+            "url": "https://www.moneycontrol.com/indian-indices/india-vix-36.html",
+            "patterns": [
+                r'"lastprice"\s*:\s*"([0-9,.]+)"',
+                r'class="inprice1[^"]*"[^>]*>([0-9,.]+)',
+                r'India VIX.*?([0-9]+\.[0-9]+)',
+            ]
+        },
+    ]
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    for source in sources:
+        try:
+            req = Request(source["url"], headers=headers)
+            resp = urlopen(req, timeout=10)
+            html = resp.read().decode('utf-8', errors='ignore')
+
+            for pattern in source["patterns"]:
+                match = re.search(pattern, html, re.DOTALL | re.IGNORECASE)
+                if match:
+                    val = float(match.group(1).replace(',', ''))
+                    # VIX sanity check: should be between 8 and 80
+                    if 8 <= val <= 80:
+                        print(f"   ✅ VIX from web: {val:.2f} (source: {source['url'][:50]})")
+                        return val
+        except Exception as e:
+            print(f"   VIX source failed ({source['url'][:40]}): {e}")
+            continue
+
+    # Last resort: Yahoo Finance chart API
     try:
-        # Try Google search for quick VIX value
-        url = "https://www.google.com/finance/quote/INDIAVIX:INDEXNSE"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        }
-        req = Request(url, headers=headers)
-        resp = urlopen(req, timeout=10)
-        html = resp.read().decode('utf-8')
-
-        price_match = re.search(r'data-last-price="([0-9,.]+)"', html)
-        if price_match:
-            return float(price_match.group(1).replace(',', ''))
-
-        price_match = re.search(r'class="YMlKec fxKbKc"[^>]*>([0-9,]+\.?\d*)', html)
-        if price_match:
-            return float(price_match.group(1).replace(',', ''))
-    except Exception:
-        pass
-
-    try:
-        # Fallback: try Yahoo Finance quote page directly
         url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EINDIAVIX?range=5d&interval=1d"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        req = Request(url, headers=headers)
+        req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
         resp = urlopen(req, timeout=10)
         data = json.loads(resp.read().decode())
         closes = data['chart']['result'][0]['indicators']['quote'][0]['close']
-        # Get last non-None value
         valid = [c for c in closes if c is not None]
         if valid:
             return valid[-1]
