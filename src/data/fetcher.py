@@ -135,6 +135,8 @@ def _fetch_google_finance_quote(symbol: str) -> dict | None:
     Scrape latest price from Google Finance.
     Works from cloud servers where NSE blocks requests.
     """
+    import re
+
     google_symbol = _GOOGLE_SYMBOL_MAP.get(symbol)
     if not google_symbol:
         return None
@@ -148,23 +150,38 @@ def _fetch_google_finance_quote(symbol: str) -> dict | None:
         resp = urlopen(req, timeout=10)
         html = resp.read().decode('utf-8')
 
-        # Extract price from the page using simple string parsing
-        # Google Finance puts the price in a specific data attribute
-        import re
+        result = {}
 
-        # Try to find price in the HTML — Google puts it after "data-last-price"
+        # Extract current price
         price_match = re.search(r'data-last-price="([0-9,.]+)"', html)
         if price_match:
-            price = float(price_match.group(1).replace(',', ''))
-            print(f"   ✅ Google Finance price for {symbol}: ₹{price:,.2f}")
-            return {"close": price}
+            result['close'] = float(price_match.group(1).replace(',', ''))
+        else:
+            price_match = re.search(r'class="YMlKec fxKbKc"[^>]*>([0-9,]+\.?\d*)', html)
+            if price_match:
+                result['close'] = float(price_match.group(1).replace(',', ''))
 
-        # Alternative pattern
-        price_match = re.search(r'class="YMlKec fxKbKc"[^>]*>([0-9,]+\.?\d*)', html)
-        if price_match:
-            price = float(price_match.group(1).replace(',', ''))
-            print(f"   ✅ Google Finance price for {symbol}: ₹{price:,.2f}")
-            return {"close": price}
+        # Extract previous close for accurate % change
+        prev_match = re.search(r'data-open-price="([0-9,.]+)"', html)
+        if prev_match:
+            result['open'] = float(prev_match.group(1).replace(',', ''))
+
+        prev_close_match = re.search(r'Previous close.*?([0-9,]+\.\d+)', html, re.DOTALL)
+        if prev_close_match:
+            result['prev_close'] = float(prev_close_match.group(1).replace(',', ''))
+
+        # Extract day high/low
+        high_match = re.search(r'data-value="Day range".*?([0-9,]+\.\d+)\s*-\s*([0-9,]+\.\d+)', html, re.DOTALL)
+        if high_match:
+            result['low'] = float(high_match.group(1).replace(',', ''))
+            result['high'] = float(high_match.group(2).replace(',', ''))
+
+        if result.get('close', 0) > 0:
+            # Use prev_close as open if open not available
+            if 'open' not in result and 'prev_close' in result:
+                result['open'] = result['prev_close']
+            print(f"   ✅ Google Finance price for {symbol}: ₹{result['close']:,.2f}")
+            return result
 
     except Exception as e:
         print(f"   Google Finance fallback failed for {symbol}: {e}")

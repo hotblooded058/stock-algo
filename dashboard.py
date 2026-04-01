@@ -121,10 +121,19 @@ if not vix_df.empty:
     vix_change = vix_df['Close'].iloc[-1] - vix_df['Close'].iloc[-2]
     col_vix.metric("India VIX", f"{vix_val:.2f}", f"{vix_change:+.2f}")
 
+# Calculate % change — use previous candle's close if open == close (patched data)
+current_close = indicators['close']
+current_open = indicators['open']
+if len(df) >= 2 and abs(current_close - current_open) < 0.01:
+    prev_close = df['Close'].iloc[-2]
+    pct_change = ((current_close - prev_close) / prev_close * 100)
+else:
+    pct_change = ((current_close - current_open) / current_open * 100)
+
 col_price.metric(
     selected_name,
-    f"₹{indicators['close']:,.2f}",
-    f"{((indicators['close'] - indicators['open']) / indicators['open'] * 100):+.2f}%"
+    f"₹{current_close:,.2f}",
+    f"{pct_change:+.2f}%"
 )
 
 rsi_val = indicators.get('rsi')
