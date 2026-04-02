@@ -271,3 +271,75 @@ export const system = {
   }>("/system/status"),
   health: () => fetcher<{ status: string }>("/health"),
 };
+
+// ========================================================
+// BACKTEST
+// ========================================================
+
+export interface BacktestMetrics {
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+  avg_win: number;
+  avg_loss: number;
+  profit_factor: number;
+  max_drawdown: number;
+  max_drawdown_pct: number;
+  sharpe_ratio: number;
+  avg_bars_held: number;
+  best_trade: number;
+  worst_trade: number;
+}
+
+export interface BacktestTrade {
+  direction: string;
+  entry_price: number;
+  exit_price: number;
+  entry_date: string;
+  exit_date: string;
+  exit_reason: string;
+  pnl: number;
+  pnl_pct: number;
+  bars_held: number;
+  score: number;
+  strategy: string;
+}
+
+export interface BacktestResult {
+  symbol: string;
+  period: string;
+  interval: string;
+  strategy: string;
+  metrics: BacktestMetrics;
+  trades: BacktestTrade[];
+  equity_curve: number[];
+  monthly_returns: Record<string, number>;
+}
+
+export const backtest = {
+  run: (symbol: string, period = "1y", interval = "1d", strategy = "all", minScore = 40) =>
+    fetcher<BacktestResult>(
+      `/backtest/run?symbol=${symbol}&period=${period}&interval=${interval}&strategy=${strategy}&min_score=${minScore}`
+    ),
+};
+
+// ========================================================
+// JOURNAL
+// ========================================================
+
+export const journal = {
+  report: () => fetcher<Record<string, unknown>>("/journal/report"),
+};
+
+// ========================================================
+// ALERTS
+// ========================================================
+
+export const alerts = {
+  test: () => fetcher<{ success: boolean; channels: string[] }>("/alerts/test"),
+  history: () => fetcher<{ alerts: { time: string; message: string; category: string }[] }>("/alerts/history"),
+  status: () => fetcher<{ telegram_enabled: boolean; message: string }>("/alerts/status"),
+};

@@ -1,24 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { trades, type Trade, type TradeStats } from "@/lib/api";
+import { trades, journal, type Trade, type TradeStats } from "@/lib/api";
 
 export default function TradesPage() {
   const [allTrades, setAllTrades] = useState<Trade[]>([]);
   const [stats, setStats] = useState<TradeStats | null>(null);
+  const [journalData, setJournalData] = useState<Record<string, unknown> | null>(null);
   const [filter, setFilter] = useState<string>("");
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"journal" | "stats">("journal");
+  const [tab, setTab] = useState<"journal" | "stats" | "analytics">("journal");
 
   useEffect(() => {
     async function load() {
       try {
-        const [t, s] = await Promise.all([
+        const [t, s, j] = await Promise.all([
           trades.list(),
           trades.stats(),
+          journal.report().catch(() => null),
         ]);
         setAllTrades(t.trades);
         setStats(s);
+        setJournalData(j);
       } catch (e) {
         console.error(e);
       } finally {
@@ -49,6 +52,12 @@ export default function TradesPage() {
           className={`text-sm pb-2 ${tab === "stats" ? "text-orange-400 border-b-2 border-orange-400" : "text-gray-500"}`}
         >
           Statistics
+        </button>
+        <button
+          onClick={() => setTab("analytics")}
+          className={`text-sm pb-2 ${tab === "analytics" ? "text-orange-400 border-b-2 border-orange-400" : "text-gray-500"}`}
+        >
+          Analytics
         </button>
       </div>
 
@@ -109,6 +118,16 @@ export default function TradesPage() {
           )}
         </>
       )}
+
+      {tab === "analytics" && journalData && (
+        <AnalyticsView data={journalData} />
+      )}
+
+      {tab === "analytics" && !journalData && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-8 text-center text-gray-500">
+          <p>No trade data for analytics. Record some trades first.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -120,6 +139,71 @@ function StatCard({ label, value, color = "text-white" }: {
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
       <p className="text-xs text-gray-500 uppercase">{label}</p>
       <p className={`text-xl font-bold mt-1 ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+interface Streaks { max_win_streak: number; max_loss_streak: number; current_streak: string; current_streak_count: number }
+interface DayPerf { day: string; trades: number; win_rate: number; total_pnl: number }
+
+function AnalyticsView({ data }: { data: Record<string, unknown> }) {
+  const streaks = data.streaks as Streaks | undefined;
+  const suggestions = data.improvement_areas as string[] | undefined;
+  const byDay = data.by_day_of_week as DayPerf[] | undefined;
+
+  return (
+    <div className="space-y-4">
+      {streaks && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h3 className="font-semibold mb-3">Streaks</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="bg-gray-800 rounded-lg p-3 text-center">
+              <p className="text-xs text-gray-500">Best Win Streak</p>
+              <p className="text-xl font-bold text-green-400">{streaks.max_win_streak}</p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-3 text-center">
+              <p className="text-xs text-gray-500">Worst Loss Streak</p>
+              <p className="text-xl font-bold text-red-400">{streaks.max_loss_streak}</p>
+            </div>
+            <div className="bg-gray-800 rounded-lg p-3 text-center">
+              <p className="text-xs text-gray-500">Current</p>
+              <p className={`text-xl font-bold ${streaks.current_streak === "win" ? "text-green-400" : "text-red-400"}`}>
+                {streaks.current_streak_count} {streaks.current_streak}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {suggestions && suggestions.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h3 className="font-semibold mb-3">Improvement Areas</h3>
+          <div className="space-y-2">
+            {suggestions.map((s, i) => (
+              <p key={i} className="text-sm text-gray-300">
+                <span className="text-orange-400 mr-2">*</span>{s}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {byDay && byDay.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <h3 className="font-semibold mb-3">Performance by Day</h3>
+          <div className="grid grid-cols-5 gap-2">
+            {byDay.map((d) => (
+              <div key={d.day} className={`rounded-lg p-2 text-center text-xs ${d.total_pnl >= 0 ? "bg-green-500/10" : "bg-red-500/10"}`}>
+                <p className="text-gray-500">{d.day.slice(0, 3)}</p>
+                <p className={`font-bold ${d.total_pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {d.total_pnl >= 0 ? "+" : ""}₹{d.total_pnl}
+                </p>
+                <p className="text-gray-500">{d.win_rate}% WR</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

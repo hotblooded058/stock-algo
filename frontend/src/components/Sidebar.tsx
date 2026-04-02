@@ -8,6 +8,7 @@ const navItems = [
   { href: "/signals", label: "Signals", icon: "🎯" },
   { href: "/options", label: "Options Chain", icon: "📈" },
   { href: "/trades", label: "Trade Journal", icon: "💰" },
+  { href: "/backtest", label: "Backtest", icon: "🧪" },
   { href: "/scanner", label: "Scanner", icon: "🔍" },
 ];
 
