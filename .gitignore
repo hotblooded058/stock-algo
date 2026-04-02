@@ -27,7 +27,7 @@ config/secrets.py
 
 # Database
 *.db
-data/
+/data/
 
 # Node / Frontend
 frontend/node_modules/

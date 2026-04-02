@@ -212,9 +212,136 @@ def _apply_rsi_filter(signal: Signal, rsi: float | None) -> Signal:
     return signal
 
 
-def generate_all_signals(symbol: str, indicators: dict) -> list[Signal]:
+def generate_oi_signal(symbol: str, indicators: dict,
+                       options_data: dict = None) -> Signal | None:
+    """
+    Strategy 3: OI-Based Signal
+    Uses options chain analytics (PCR, OI buildup, max pain) for direction.
+    """
+    if not options_data:
+        return None
+
+    score_call = 0
+    score_put = 0
+    reasons_call = []
+    reasons_put = []
+
+    # --- PCR Signal ---
+    pcr = options_data.get("pcr", {})
+    oi_pcr = pcr.get("oi_pcr", 0)
+
+    if oi_pcr > 1.2:
+        score_call += 25
+        reasons_call.append(f"PCR {oi_pcr} — heavy put writing, strong bullish support")
+    elif oi_pcr > 1.0:
+        score_call += 15
+        reasons_call.append(f"PCR {oi_pcr} — moderate bullish sentiment")
+
+    if oi_pcr < 0.7:
+        score_put += 25
+        reasons_put.append(f"PCR {oi_pcr} — heavy call writing, strong bearish resistance")
+    elif oi_pcr < 1.0:
+        score_put += 15
+        reasons_put.append(f"PCR {oi_pcr} — moderate bearish sentiment")
+
+    # --- OI Buildup ---
+    oi_buildup = options_data.get("oi_buildup", {})
+    total_put_oi_change = oi_buildup.get("total_put_oi_change", 0)
+    total_call_oi_change = oi_buildup.get("total_call_oi_change", 0)
+
+    if total_put_oi_change > 0 and total_put_oi_change > abs(total_call_oi_change):
+        score_call += 20
+        reasons_call.append("Fresh put writing — support building")
+    if total_call_oi_change > 0 and total_call_oi_change > abs(total_put_oi_change):
+        score_put += 20
+        reasons_put.append("Fresh call writing — resistance building")
+    if total_call_oi_change < 0:
+        score_call += 10
+        reasons_call.append("Call unwinding — resistance weakening, bullish")
+    if total_put_oi_change < 0:
+        score_put += 10
+        reasons_put.append("Put unwinding — support weakening, bearish")
+
+    # --- Max Pain Gravity ---
+    max_pain = options_data.get("max_pain", {})
+    mp_strike = max_pain.get("strike")
+    close = indicators.get("close", 0)
+
+    if mp_strike and close:
+        if close < mp_strike * 0.99:
+            score_call += 15
+            reasons_call.append(f"Spot below max pain {mp_strike} — gravitational pull upward")
+        elif close > mp_strike * 1.01:
+            score_put += 15
+            reasons_put.append(f"Spot above max pain {mp_strike} — gravitational pull downward")
+
+    # --- OI Support/Resistance ---
+    oi_levels = options_data.get("oi_levels", {})
+    support = oi_levels.get("support")
+    resistance = oi_levels.get("resistance")
+
+    if support and close and close > support:
+        dist_pct = ((close - support) / close) * 100
+        if dist_pct < 2:
+            score_call += 15
+            reasons_call.append(f"Near strong OI support at {support}")
+
+    if resistance and close and close < resistance:
+        dist_pct = ((resistance - close) / close) * 100
+        if dist_pct < 2:
+            score_put += 15
+            reasons_put.append(f"Near strong OI resistance at {resistance}")
+
+    # --- IV Skew ---
+    iv_skew = options_data.get("iv_skew", {})
+    skew_type = iv_skew.get("skew_type", "")
+    if "Reverse" in skew_type:
+        score_call += 10
+        reasons_call.append("Reverse IV skew — upside demand from institutions")
+    elif "Normal" in skew_type:
+        score_put += 5
+        reasons_put.append("Normal IV skew — downside protection demand")
+
+    if score_call >= SIGNAL_WEAK and score_call > score_put:
+        return Signal(symbol, "BUY_CALL", min(score_call, 100), "oi_analysis", reasons_call)
+    elif score_put >= SIGNAL_WEAK and score_put > score_call:
+        return Signal(symbol, "BUY_PUT", min(score_put, 100), "oi_analysis", reasons_put)
+
+    return None
+
+
+def _apply_vix_modifier(signal: Signal, vix: float = None) -> Signal:
+    """
+    Adjust signal score based on VIX level.
+    High VIX = options expensive = penalize buy signals.
+    """
+    if signal is None or vix is None:
+        return signal
+
+    if vix > 25:
+        signal.score = max(signal.score - 15, 0)
+        signal.reasons.append(f"VIX {vix:.1f} very high — options expensive, score reduced")
+    elif vix > 20:
+        signal.score = max(signal.score - 8, 0)
+        signal.reasons.append(f"VIX {vix:.1f} elevated — slight penalty")
+    elif vix < 13:
+        signal.score = min(signal.score + 5, 100)
+        signal.reasons.append(f"VIX {vix:.1f} low — options cheap, bonus")
+
+    return signal
+
+
+def generate_all_signals(symbol: str, indicators: dict,
+                         options_data: dict = None,
+                         vix: float = None) -> list[Signal]:
     """
     Run all strategies, apply safety filters, and return valid signals.
+
+    Args:
+        symbol: Stock symbol
+        indicators: Technical indicator values
+        options_data: Options chain analytics (from OptionsChainAnalyzer)
+        vix: Current India VIX value
     """
     signals = []
     rsi = indicators.get('rsi')
@@ -229,7 +356,17 @@ def generate_all_signals(symbol: str, indicators: dict) -> list[Signal]:
         breakout = _apply_rsi_filter(breakout, rsi)
         signals.append(breakout)
 
-    # Filter out signals that dropped below threshold after RSI filter
+    # OI-based signal (if chain data available)
+    if options_data:
+        oi_signal = generate_oi_signal(symbol, indicators, options_data)
+        if oi_signal:
+            signals.append(oi_signal)
+
+    # Apply VIX modifier to all signals
+    if vix:
+        signals = [_apply_vix_modifier(s, vix) for s in signals]
+
+    # Filter out signals that dropped below threshold after filters
     signals = [s for s in signals if s.score >= SIGNAL_WEAK]
 
     # Sort by score (highest first)

@@ -198,22 +198,65 @@ export interface OptionChainEntry {
 }
 
 export interface OptionsAnalytics {
-  pcr: number;
-  pcr_sentiment: string;
-  max_pain: number;
-  total_call_oi: number;
-  total_put_oi: number;
-  support?: number;
-  resistance?: number;
+  pcr: { oi_pcr: number; volume_pcr: number; sentiment: string; total_call_oi: number; total_put_oi: number };
+  max_pain: { strike: number; interpretation: string };
+  oi_levels: { support: number; resistance: number; range: string; support_levels: { strike: number; oi: number }[]; resistance_levels: { strike: number; oi: number }[] };
+  iv_skew: { skew_type: string; atm_iv: number; interpretation: string };
+  oi_buildup: { total_call_oi_change: number; total_put_oi_change: number; signals: string[] };
+  summary: { bias: string; bias_score: number; reasons: string[] };
+}
+
+export interface StrikeRecommendation {
+  underlying: string;
+  direction: string;
+  expiry: string;
+  dte_days: number;
+  spot_price: number;
+  recommended: {
+    strike: number;
+    option_type: string;
+    ltp: number;
+    iv: number;
+    delta: number;
+    gamma: number;
+    theta: number;
+    vega: number;
+    moneyness: string;
+    score: number;
+    reasons: string[];
+    lot_size: number;
+    lot_value: number;
+  };
+  alternatives: { strike: number; ltp: number; delta: number; score: number }[];
+}
+
+export interface GreeksResult {
+  iv: number;
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+  theoretical_price: number;
+  moneyness: string;
 }
 
 export const options = {
-  chain: (underlying: string, expiry?: string) =>
+  chain: (underlying: string, expiry?: string, spotPrice?: number) =>
     fetcher<{ chain: OptionChainEntry[]; analytics: OptionsAnalytics }>(
-      `/options/chain?underlying=${underlying}${expiry ? `&expiry=${expiry}` : ""}`
+      `/options/chain?underlying=${underlying}${expiry ? `&expiry=${expiry}` : ""}${spotPrice ? `&spot_price=${spotPrice}` : ""}`
     ),
-  analytics: (underlying: string) =>
-    fetcher<OptionsAnalytics>(`/options/analytics?underlying=${underlying}`),
+  analytics: (underlying: string, spotPrice?: number) =>
+    fetcher<OptionsAnalytics>(`/options/analytics?underlying=${underlying}${spotPrice ? `&spot_price=${spotPrice}` : ""}`),
+  greeks: (spot: number, strike: number, expiry: string, optionType = "CE", premium?: number) =>
+    fetcher<GreeksResult>(
+      `/options/greeks?spot=${spot}&strike=${strike}&expiry=${expiry}&option_type=${optionType}${premium ? `&premium=${premium}` : ""}`
+    ),
+  recommendStrike: (underlying: string, spotPrice: number, direction: string, expiry?: string, riskProfile = "moderate") =>
+    fetcher<StrikeRecommendation>(
+      `/options/recommend-strike?underlying=${underlying}&spot_price=${spotPrice}&direction=${direction}&risk_profile=${riskProfile}${expiry ? `&expiry=${expiry}` : ""}`
+    ),
+  marketContext: () => fetcher<Record<string, unknown>>("/options/market-context"),
+  fetchContext: () => poster<Record<string, unknown>>("/options/fetch-context"),
 };
 
 // ========================================================
