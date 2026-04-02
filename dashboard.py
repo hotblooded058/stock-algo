@@ -119,7 +119,18 @@ vix_df = cached_fetch_vix()
 if not vix_df.empty:
     vix_val = vix_df['Close'].iloc[-1]
     vix_change = vix_df['Close'].iloc[-1] - vix_df['Close'].iloc[-2]
-    col_vix.metric("India VIX", f"{vix_val:.2f}", f"{vix_change:+.2f}")
+
+    # Check if VIX data is stale
+    vix_last_date = vix_df.index[-1]
+    if hasattr(vix_last_date, 'date'):
+        vix_last_date = vix_last_date.date()
+    vix_days_old = (datetime.now().date() - vix_last_date).days if hasattr(vix_last_date, 'day') else 0
+
+    if vix_days_old > 1:
+        col_vix.metric("India VIX", f"~{vix_val:.2f}", help=f"⚠️ {vix_days_old} days old — check live VIX on your broker app")
+        col_vix.caption(f"⚠️ {vix_days_old}d old")
+    else:
+        col_vix.metric("India VIX", f"{vix_val:.2f}", f"{vix_change:+.2f}")
 
 # Calculate % change — use previous candle's close if open == close (patched data)
 current_close = indicators['close']

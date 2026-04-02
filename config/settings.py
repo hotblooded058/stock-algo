@@ -90,3 +90,37 @@ TELEGRAM_CHAT_ID = ""           # Your chat/group ID
 DEFAULT_PERIOD = "3mo"          # How much historical data to fetch
 DEFAULT_INTERVAL = "15m"        # Candle interval (1m, 5m, 15m, 1h, 1d)
 DAILY_INTERVAL = "1d"           # For daily analysis
+
+# ============================================================
+# DATABASE
+# ============================================================
+import os
+DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'trading.db')
+
+# ============================================================
+# BROKER (AngelOne SmartAPI)
+# ============================================================
+BROKER_NAME = "angelone"
+DATA_SOURCE_PRIORITY = ["angelone", "yahoo", "nse", "google"]
+TRADING_MODE = "paper"          # "paper" or "live" — paper first!
+
+# ============================================================
+# OPTIONS SETTINGS
+# ============================================================
+LOT_SIZES = {
+    "NIFTY": 25,
+    "BANKNIFTY": 15,
+    "FINNIFTY": 25,
+    "RELIANCE": 250,
+    "TCS": 150,
+    "HDFCBANK": 550,
+    "INFY": 300,
+    "ICICIBANK": 700,
+    "SBIN": 750,
+    "BHARTIARTL": 450,
+    "ITC": 1600,
+}
+
+# Options chain fetch settings
+OPTIONS_STRIKE_RANGE = 15       # ATM +/- 15 strikes
+DEFAULT_EXPIRY = "weekly"       # "weekly" or "monthly"

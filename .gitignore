@@ -10,8 +10,8 @@ venv/
 
 # Logs & state
 logs/
-journal/
-*.json
+journal/*.json
+logs/*.json
 
 # OS
 .DS_Store
@@ -24,3 +24,12 @@ Thumbs.db
 # Secrets
 .env
 config/secrets.py
+
+# Database
+*.db
+data/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
