@@ -74,7 +74,9 @@ FNO_STOCKS = {
     "TORNTPOWER": {"yahoo": "TORNTPOWER.NS", "lot": 625, "sector": "Energy"},
 
     # === AUTO ===
-    "TATAMOTORS": {"yahoo": "TATAMOTORS.NS", "lot": 1350, "sector": "Auto"},
+    # TATAMOTORS: Yahoo Finance currently broken for this symbol
+    # Use AngelOne for live data. Keeping with .BO as fallback.
+    "TATAMOTORS": {"yahoo": "500570.BO", "lot": 1350, "sector": "Auto"},
     "MARUTI": {"yahoo": "MARUTI.NS", "lot": 50, "sector": "Auto"},
     "BAJAJ-AUTO": {"yahoo": "BAJAJ-AUTO.NS", "lot": 75, "sector": "Auto"},
     "M&M": {"yahoo": "M&M.NS", "lot": 350, "sector": "Auto"},
@@ -162,7 +164,7 @@ FNO_STOCKS = {
     "TITAN": {"yahoo": "TITAN.NS", "lot": 175, "sector": "Consumer"},
     "PAGEIND": {"yahoo": "PAGEIND.NS", "lot": 15, "sector": "Consumer"},
     "DMART": {"yahoo": "DMART.NS", "lot": 125, "sector": "Consumer"},
-    "ZOMATO": {"yahoo": "ZOMATO.NS", "lot": 3000, "sector": "Consumer"},
+    "ZOMATO": {"yahoo": "ETERNAL.NS", "lot": 3000, "sector": "Consumer"},  # Rebranded to Eternal
     "NYKAA": {"yahoo": "NYKAA.NS", "lot": 2750, "sector": "Consumer"},
     "PAYTM": {"yahoo": "PAYTM.NS", "lot": 750, "sector": "Consumer"},
 
