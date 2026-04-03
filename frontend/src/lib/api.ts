@@ -378,6 +378,72 @@ export const screener = {
     ),
 };
 
+// ========================================================
+// PAPER TRADING
+// ========================================================
+
+export interface PaperPosition {
+  id: number;
+  symbol: string;
+  instrument?: string;
+  direction: string;
+  quantity: number;
+  entry_price: number;
+  exit_price?: number;
+  stop_loss?: number;
+  target_1?: number;
+  target_2?: number;
+  pnl?: number;
+  status: string;
+  entry_time: string;
+  exit_time?: string;
+  exit_reason?: string;
+  broker_order_id?: string;
+  notes?: string;
+}
+
+export interface PaperStats {
+  total_trades: number;
+  open_trades: number;
+  closed_trades: number;
+  wins?: number;
+  losses?: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_win: number;
+  avg_loss: number;
+  profit_factor: number;
+  best_trade?: number;
+  worst_trade?: number;
+  ready_for_live: boolean;
+  trades_needed?: number;
+  message: string;
+}
+
+export const paper = {
+  enter: (trade: {
+    symbol: string; direction: string; entry_premium: number;
+    quantity?: number; stop_loss?: number; target_1?: number; target_2?: number;
+    instrument?: string; notes?: string;
+  }) => poster<{ id: number; paper_id: string; message: string }>("/paper/enter", trade),
+
+  exit: (tradeId: number, exitPrice: number, reason = "manual") =>
+    poster<{ pnl: number; status: string; message: string }>(
+      `/paper/${tradeId}/exit`, { exit_price: exitPrice, reason }
+    ),
+
+  positions: () =>
+    fetcher<{ positions: PaperPosition[]; count: number }>("/paper/positions"),
+
+  history: (limit = 50) =>
+    fetcher<{ trades: PaperPosition[]; count: number }>(`/paper/history?limit=${limit}`),
+
+  stats: () => fetcher<PaperStats>("/paper/stats"),
+
+  check: (prices: Record<string, number>) =>
+    poster<{ auto_closed: unknown[]; count: number }>("/paper/check", prices),
+};
+
 export const alerts = {
   test: () => fetcher<{ success: boolean; channels: string[] }>("/alerts/test"),
   history: () => fetcher<{ alerts: { time: string; message: string; category: string }[] }>("/alerts/history"),

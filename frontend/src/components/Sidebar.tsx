@@ -10,6 +10,7 @@ const navItems = [
   { href: "/trades", label: "Trade Journal", icon: "💰" },
   { href: "/backtest", label: "Backtest", icon: "🧪" },
   { href: "/screener2", label: "F&O Screener", icon: "🔍" },
+  { href: "/paper", label: "Paper Trade", icon: "📝" },
   { href: "/scanner", label: "Calculator", icon: "🧮" },
 ];
 
