@@ -15,13 +15,19 @@ from src.signals.generator import generate_all_signals
 
 router = APIRouter()
 
-# In-memory cache for fast refresh
+# In-memory caches
 _scan_cache = {
     "results": [],
     "last_updated": None,
     "sector": None,
     "scanning": False,
 }
+
+# User's watchlist — persisted in memory, editable via API
+_watchlist: list[str] = [
+    "SBIN", "RELIANCE", "HDFCBANK", "ICICIBANK", "TCS",
+    "INFY", "BAJFINANCE", "ITC", "BHARTIARTL", "TATAMOTORS",
+]
 
 
 @router.get("/stocks")
@@ -251,3 +257,111 @@ def clear_cache():
     _scan_cache["last_updated"] = None
     _scan_cache["sector"] = None
     return {"message": "Cache cleared"}
+
+
+# ============================================================
+# WATCHLIST — User's selected stocks with fast 15-sec refresh
+# ============================================================
+
+@router.get("/watchlist")
+def get_watchlist():
+    """Get current watchlist symbols."""
+    items = []
+    for sym in _watchlist:
+        info = FNO_STOCKS.get(sym, {})
+        items.append({
+            "symbol": sym,
+            "sector": info.get("sector", "Other"),
+            "lot_size": info.get("lot", 1),
+        })
+    return {"watchlist": items, "count": len(items)}
+
+
+@router.post("/watchlist/add")
+def add_to_watchlist(symbol: str = Query(...)):
+    """Add a stock to watchlist."""
+    sym = symbol.upper()
+    if sym not in FNO_STOCKS:
+        return {"error": f"{sym} not in F&O stock list"}
+    if sym in _watchlist:
+        return {"message": f"{sym} already in watchlist"}
+    _watchlist.append(sym)
+    return {"message": f"{sym} added", "watchlist": _watchlist}
+
+
+@router.post("/watchlist/remove")
+def remove_from_watchlist(symbol: str = Query(...)):
+    """Remove a stock from watchlist."""
+    sym = symbol.upper()
+    if sym in _watchlist:
+        _watchlist.remove(sym)
+        return {"message": f"{sym} removed", "watchlist": _watchlist}
+    return {"error": f"{sym} not in watchlist"}
+
+
+@router.get("/watchlist/scan")
+def scan_watchlist():
+    """
+    Fast scan of watchlist stocks only (10-15 stocks).
+    Uses AngelOne live data. Designed for 15-second refresh.
+    """
+    live_quotes = get_live_quotes(_watchlist)
+    source = "angelone" if live_quotes else "yahoo"
+
+    results = []
+    for sym in _watchlist:
+        info = FNO_STOCKS.get(sym, {})
+        yahoo = info.get("yahoo", f"{sym}.NS")
+
+        try:
+            df = fetch_stock_data(yahoo, period="3mo", interval="1d")
+            if df.empty or len(df) < 30:
+                continue
+
+            df = add_all_indicators(df)
+            indicators = get_latest_indicators(df)
+
+            # Live price from AngelOne
+            if sym in live_quotes:
+                price = live_quotes[sym]["ltp"]
+                change_pct = live_quotes[sym]["change_pct"]
+            else:
+                price = float(df["Close"].iloc[-1])
+                prev = float(df["Close"].iloc[-2]) if len(df) > 1 else price
+                change_pct = ((price - prev) / prev) * 100
+
+            signals = generate_all_signals(yahoo, indicators)
+            best_signal = signals[0] if signals else None
+
+            rsi = indicators.get("rsi")
+            adx = indicators.get("adx")
+
+            results.append({
+                "symbol": sym,
+                "sector": info.get("sector", ""),
+                "lot_size": info.get("lot", 1),
+                "price": round(price, 2),
+                "change_pct": round(change_pct, 2),
+                "direction": best_signal.direction if best_signal else "NONE",
+                "score": best_signal.score if best_signal else 0,
+                "strength": best_signal.strength if best_signal else "NO_SIGNAL",
+                "strategy": best_signal.strategy if best_signal else "-",
+                "reasons": best_signal.reasons if best_signal else [],
+                "rsi": round(rsi, 1) if rsi else None,
+                "adx": round(adx, 1) if adx else None,
+                "above_vwap": indicators.get("above_vwap"),
+                "supertrend": "Bullish" if indicators.get("supertrend_bullish") else "Bearish" if indicators.get("supertrend_bullish") is False else None,
+                "volume_ratio": round(indicators.get("volume_ratio", 0) or 0, 2) or None,
+                "live": sym in live_quotes,
+            })
+        except Exception:
+            continue
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+
+    return {
+        "signals": results,
+        "count": len(results),
+        "source": source,
+        "timestamp": datetime.now().isoformat(),
+    }

@@ -376,6 +376,16 @@ export const screener = {
     fetcher<{ gainers: { symbol: string; sector: string; price: number; change_pct: number }[]; losers: { symbol: string; sector: string; price: number; change_pct: number }[] }>(
       "/screener/top-movers"
     ),
+  watchlist: () =>
+    fetcher<{ watchlist: { symbol: string; sector: string; lot_size: number }[] }>("/screener/watchlist"),
+  watchlistAdd: (symbol: string) =>
+    poster<{ message: string }>(`/screener/watchlist/add?symbol=${symbol}`),
+  watchlistRemove: (symbol: string) =>
+    poster<{ message: string }>(`/screener/watchlist/remove?symbol=${symbol}`),
+  watchlistScan: () =>
+    fetcher<{ signals: ScreenerSignal[]; count: number; source: string; timestamp: string }>(
+      "/screener/watchlist/scan"
+    ),
 };
 
 // ========================================================
