@@ -1,0 +1,67 @@
+version: "3.8"
+
+# PRODUCTION config — use with:
+# docker compose -f deployment/docker-compose.prod.yml up -d
+#
+# For VPS/cloud deployment:
+# 1. Set YOUR_SERVER_IP below
+# 2. Set up SSL with nginx reverse proxy (see nginx.conf)
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.backend
+    container_name: trading-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - trading-data:/app/data
+      - ../config/secrets.py:/app/config/secrets.py:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.frontend
+      args:
+        # Change this to your server IP or domain
+        NEXT_PUBLIC_API_URL: http://YOUR_SERVER_IP:8000/api
+    container_name: trading-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  # Optional: Nginx reverse proxy for SSL
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: trading-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/conf.d/default.conf
+  #     - ./ssl:/etc/nginx/ssl
+  #   depends_on:
+  #     - frontend
+  #     - backend
+  #   restart: always
+
+volumes:
+  trading-data:
+    driver: local

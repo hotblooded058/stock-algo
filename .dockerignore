@@ -1,0 +1,36 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+.venv
+venv
+*.egg-info
+
+# Node
+frontend/node_modules
+frontend/.next
+frontend/out
+
+# Data
+data/
+*.db
+logs/
+journal/
+
+# IDE
+.vscode
+.idea
+
+# Docs
+docs/
+*.md
+!frontend/README.md
+
+# Deployment (don't include in build context recursively)
+deployment/ssl/
+
+# OS
+.DS_Store
