@@ -48,6 +48,11 @@ class TradePlanGenerator:
         if df.empty or len(df) < 30:
             return {"error": f"Could not fetch data for {symbol}"}
 
+        # Fix MultiIndex columns if yfinance returns them
+        import pandas as pd
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
         df = add_all_indicators(df)
         indicators = get_latest_indicators(df)
         spot = float(df["Close"].iloc[-1])

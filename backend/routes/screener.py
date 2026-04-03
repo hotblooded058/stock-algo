@@ -6,12 +6,20 @@ Scans F&O stocks with real-time prices and caches results for fast refresh.
 from fastapi import APIRouter, Query
 from datetime import datetime
 import threading
+import pandas as pd
 
 from src.data.fno_stocks import FNO_STOCKS, get_sectors
 from src.data.live_feed import get_live_quotes
 from src.data.fetcher import fetch_stock_data
 from src.indicators.technical import add_all_indicators, get_latest_indicators
 from src.signals.generator import generate_all_signals
+
+
+def _fix_df(df):
+    """Fix MultiIndex columns from yfinance."""
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df
 
 from src.signals.trade_plan import TradePlanGenerator
 
@@ -108,7 +116,7 @@ def scan_stocks(
     for sym, info in targets:
         try:
             # Get historical data for indicators (need 50+ candles)
-            df = fetch_stock_data(info["yahoo"], period="3mo", interval="1d")
+            df = _fix_df(fetch_stock_data(info["yahoo"], period="3mo", interval="1d"))
             if df.empty or len(df) < 30:
                 errors += 1
                 continue
@@ -323,7 +331,7 @@ def scan_watchlist():
         yahoo = info.get("yahoo", f"{sym}.NS")
 
         try:
-            df = fetch_stock_data(yahoo, period="3mo", interval="1d")
+            df = _fix_df(fetch_stock_data(yahoo, period="3mo", interval="1d"))
             if df.empty or len(df) < 30:
                 continue
 
