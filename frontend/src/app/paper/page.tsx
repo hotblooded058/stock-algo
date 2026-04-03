@@ -44,10 +44,10 @@ export default function PaperTradingPage() {
   };
 
   const handleEnter = async () => {
-    if (!symbol || !premium) {
-      setEntryResult("Enter symbol and premium");
-      return;
-    }
+    if (!symbol) { setEntryResult("Enter a symbol (e.g. SBIN, NIFTY)"); return; }
+    if (!premium || premium <= 0) { setEntryResult("Enter a valid premium (> 0)"); return; }
+    if (sl && sl >= premium) { setEntryResult("Stop loss must be less than premium"); return; }
+    if (target && target <= premium) { setEntryResult("Target must be greater than premium"); return; }
     setLoading(true);
     try {
       const result = await paper.enter({

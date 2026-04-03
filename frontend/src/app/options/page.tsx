@@ -1,26 +1,36 @@
 "use client";
 
-import { useState } from "react";
-import { options, type OptionChainEntry, type OptionsAnalytics, type StrikeRecommendation } from "@/lib/api";
-
-const underlyings = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "HDFCBANK", "INFY"];
+import { useEffect, useState } from "react";
+import { options, screener, type OptionChainEntry, type OptionsAnalytics, type StrikeRecommendation } from "@/lib/api";
 
 export default function OptionsPage() {
+  const [underlyings, setUnderlyings] = useState<string[]>(["NIFTY", "BANKNIFTY"]);
   const [selected, setSelected] = useState("NIFTY");
   const [chain, setChain] = useState<OptionChainEntry[]>([]);
   const [analytics, setAnalytics] = useState<OptionsAnalytics | null>(null);
   const [strikeRec, setStrikeRec] = useState<StrikeRecommendation | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [spotPrice, setSpotPrice] = useState<number>(0);
   const [tab, setTab] = useState<"chain" | "analytics" | "recommend">("chain");
 
+  // Load all F&O symbols from backend
+  useEffect(() => {
+    screener.stocks().then((d) => {
+      const syms = d.stocks.map((s) => s.symbol).filter((s) => !s.includes("TEST"));
+      setUnderlyings(syms);
+    }).catch(() => {});
+  }, []);
+
   const fetchChain = async () => {
     setLoading(true);
+    setError("");
     try {
       const data = await options.chain(selected, undefined, spotPrice || undefined);
       setChain(data.chain);
       setAnalytics(data.analytics);
     } catch (e) {
+      setError("Failed to fetch options chain. Check if backend is running.");
       console.error(e);
     } finally {
       setLoading(false);

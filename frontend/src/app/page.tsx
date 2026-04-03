@@ -25,6 +25,8 @@ export default function Dashboard() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -34,10 +36,15 @@ export default function Dashboard() {
           system.status().catch(() => null),
           trades.stats().catch(() => null),
         ]);
+        if (!v && !sys && !st) {
+          setError("Cannot connect to backend. Is the server running on port 8000?");
+        }
         setVix(v);
         setSystemStatus(sys);
         setStats(st);
+        setLastUpdated(new Date().toLocaleTimeString("en-IN"));
       } catch (e) {
+        setError("Backend connection failed. Start with: python3 -m uvicorn backend.app:app --port 8000");
         console.error("Load error:", e);
       } finally {
         setLoading(false);
@@ -80,6 +87,13 @@ export default function Dashboard() {
           </span>
         </div>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-400">
+          {error}
+        </div>
+      )}
 
       {/* Top Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

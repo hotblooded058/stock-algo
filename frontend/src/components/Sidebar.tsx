@@ -5,13 +5,13 @@ import { usePathname } from "next/navigation";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: "📊" },
+  { href: "/screener2", label: "F&O Screener", icon: "🔍" },
   { href: "/signals", label: "Signals", icon: "🎯" },
   { href: "/options", label: "Options Chain", icon: "📈" },
+  { href: "/paper", label: "Paper Trade", icon: "📝" },
   { href: "/trades", label: "Trade Journal", icon: "💰" },
   { href: "/backtest", label: "Backtest", icon: "🧪" },
-  { href: "/screener2", label: "F&O Screener", icon: "🔍" },
-  { href: "/paper", label: "Paper Trade", icon: "📝" },
-  { href: "/scanner", label: "Calculator", icon: "🧮" },
+  { href: "/scanner", label: "Position Calc", icon: "🧮" },
 ];
 
 export default function Sidebar() {
@@ -21,7 +21,7 @@ export default function Sidebar() {
     <aside className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col min-h-screen">
       <div className="p-4 border-b border-gray-800">
         <h1 className="text-lg font-bold text-orange-400">Trading Engine</h1>
-        <p className="text-xs text-gray-500 mt-1">Decision Support</p>
+        <p className="text-xs text-gray-500 mt-1">Decision Support v4</p>
       </div>
 
       <nav className="flex-1 p-2 space-y-1">
@@ -44,11 +44,9 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="p-4 border-t border-gray-800">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-red-500" />
-          <span className="text-xs text-gray-500">Broker: Offline</span>
-        </div>
+      <div className="p-4 border-t border-gray-800 text-xs text-gray-600">
+        <p>Strategy v4 — 62% WR</p>
+        <p>171 F&O Stocks</p>
       </div>
     </aside>
   );
