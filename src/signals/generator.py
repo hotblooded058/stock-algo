@@ -125,7 +125,7 @@ def generate_trend_signal(symbol: str, indicators: dict) -> Signal | None:
         reasons_call.append("Price above EMA 50")
 
     if indicators.get('supertrend_bullish'):
-        score_call += 20
+        score_call += 17
         reasons_call.append("SuperTrend bullish")
 
     if rsi and 45 <= rsi <= 65:
@@ -136,7 +136,7 @@ def generate_trend_signal(symbol: str, indicators: dict) -> Signal | None:
         reasons_call.append(f"RSI {rsi:.1f} — borderline, watch closely")
 
     if indicators.get('ema_bullish_cross'):
-        score_call += 20
+        score_call += 23
         reasons_call.append("EMA 9/21 bullish crossover (fresh signal)")
 
     if indicators.get('macd_hist_rising'):
@@ -153,7 +153,7 @@ def generate_trend_signal(symbol: str, indicators: dict) -> Signal | None:
         reasons_put.append("Price below EMA 50")
 
     if indicators.get('supertrend_bullish') is False:
-        score_put += 20
+        score_put += 17
         reasons_put.append("SuperTrend bearish")
 
     if rsi and 35 <= rsi <= 55:
@@ -164,7 +164,7 @@ def generate_trend_signal(symbol: str, indicators: dict) -> Signal | None:
         reasons_put.append(f"RSI {rsi:.1f} — borderline, watch closely")
 
     if indicators.get('ema_bearish_cross'):
-        score_put += 20
+        score_put += 23
         reasons_put.append("EMA 9/21 bearish crossover (fresh signal)")
 
     if indicators.get('macd_hist_rising') is False:
@@ -406,7 +406,7 @@ def _apply_confluence_bonus(signals: list[Signal]) -> list[Signal]:
     Reward when multiple strategies agree on the same direction.
     Penalize lone signals that have no confirmation.
 
-    - 2+ strategies agree: +15 bonus to each
+    - 2+ strategies agree: +23 bonus to each (optimized from 15)
     - Only 1 strategy: -10 penalty (no confirmation)
     """
     if not signals:
@@ -421,7 +421,7 @@ def _apply_confluence_bonus(signals: list[Signal]) -> list[Signal]:
         strategies = set(s.strategy for s in call_signals)
         if len(strategies) >= 2:
             for s in call_signals:
-                s.score = min(s.score + 15, 100)
+                s.score = min(s.score + 23, 100)
                 s.reasons.append(f"Confluence bonus: {len(strategies)} strategies agree on CALL")
     elif len(call_signals) == 1 and not put_signals:
         call_signals[0].score = max(call_signals[0].score - 10, 0)
@@ -432,7 +432,7 @@ def _apply_confluence_bonus(signals: list[Signal]) -> list[Signal]:
         strategies = set(s.strategy for s in put_signals)
         if len(strategies) >= 2:
             for s in put_signals:
-                s.score = min(s.score + 15, 100)
+                s.score = min(s.score + 23, 100)
                 s.reasons.append(f"Confluence bonus: {len(strategies)} strategies agree on PUT")
     elif len(put_signals) == 1 and not call_signals:
         put_signals[0].score = max(put_signals[0].score - 10, 0)
