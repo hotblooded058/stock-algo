@@ -1,24 +1,42 @@
 #!/bin/bash
 # Start both backend and frontend for development
+# Accessible from any device on same WiFi
+
+# Kill any existing processes on our ports
+lsof -ti:8000 2>/dev/null | xargs kill -9 2>/dev/null
+lsof -ti:3000 2>/dev/null | xargs kill -9 2>/dev/null
+sleep 1
+
+LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "localhost")
 
 echo "Starting Trading Engine..."
 echo "========================="
+echo ""
 
-# Start FastAPI backend on port 8000
-echo "Starting backend (FastAPI) on http://localhost:8000"
-python3 -m uvicorn backend.app:app --reload --port 8000 &
+# Start FastAPI backend (bind to 0.0.0.0 = all interfaces)
+python3 -m uvicorn backend.app:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 
-# Start Next.js frontend on port 3000
-echo "Starting frontend (Next.js) on http://localhost:3000"
-cd frontend && npm run dev &
+# Start Next.js frontend (bind to 0.0.0.0)
+cd frontend && npm run dev -- --hostname 0.0.0.0 &
 FRONTEND_PID=$!
 
 echo ""
-echo "Backend API:  http://localhost:8000/docs"
-echo "Frontend UI:  http://localhost:3000"
+echo "=========================================="
+echo "  Trading Engine Running!"
+echo "=========================================="
 echo ""
-echo "Press Ctrl+C to stop both servers"
+echo "  On this Mac:"
+echo "    Frontend:  http://localhost:3000"
+echo "    API docs:  http://localhost:8000/docs"
+echo ""
+echo "  From phone/other devices (same WiFi):"
+echo "    Frontend:  http://$LOCAL_IP:3000"
+echo "    API docs:  http://$LOCAL_IP:8000/docs"
+echo ""
+echo "  Press Ctrl+C to stop"
+echo "=========================================="
+echo ""
 
 # Wait and cleanup
 trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT TERM
