@@ -29,7 +29,7 @@ _scan_cache = {
 # User's watchlist — persisted in memory, editable via API
 _watchlist: list[str] = [
     "SBIN", "RELIANCE", "HDFCBANK", "ICICIBANK", "TCS",
-    "INFY", "BAJFINANCE", "ITC", "BHARTIARTL", "TATAMOTORS",
+    "INFY", "BAJFINANCE", "ITC", "BHARTIARTL", "HCLTECH",
 ]
 
 

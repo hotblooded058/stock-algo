@@ -74,9 +74,9 @@ FNO_STOCKS = {
     "TORNTPOWER": {"yahoo": "TORNTPOWER.NS", "lot": 625, "sector": "Energy"},
 
     # === AUTO ===
-    # TATAMOTORS: Yahoo Finance currently broken for this symbol
-    # Use AngelOne for live data. Keeping with .BO as fallback.
-    "TATAMOTORS": {"yahoo": "500570.BO", "lot": 1350, "sector": "Auto"},
+    # TATAMOTORS: Yahoo Finance broken for both .NS and .BO
+    # Will only work via AngelOne live feed, not Yahoo
+    # "TATAMOTORS": {"yahoo": "TATAMOTORS.NS", "lot": 1350, "sector": "Auto"},
     "MARUTI": {"yahoo": "MARUTI.NS", "lot": 50, "sector": "Auto"},
     "BAJAJ-AUTO": {"yahoo": "BAJAJ-AUTO.NS", "lot": 75, "sector": "Auto"},
     "M&M": {"yahoo": "M&M.NS", "lot": 350, "sector": "Auto"},
