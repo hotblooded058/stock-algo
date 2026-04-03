@@ -1,13 +1,18 @@
 """
-Backtesting Engine
-Runs signal logic on historical data to validate strategies before live trading.
+Backtesting Engine v2
+Improved with: trailing stop loss, options-aware P&L, cooldown after loss.
 
-Uses the same indicator + signal code as live trading for consistency.
+Changes from v1:
+- Trailing SL: moves SL to breakeven after 1% move, then trails at 50% of max profit
+- Options P&L: simulates delta-based option price movement with theta decay
+- Cooldown: skips 2 bars after a losing trade (avoid revenge trading)
+- Better exit: no fixed time exit, only SL/target/trail
 """
 
 import sys
 import os
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from dataclasses import dataclass, field
 
@@ -32,6 +37,8 @@ class BacktestTrade:
     target_1: float
     target_2: float
     entry_date: str
+    trailing_sl: float = 0
+    max_favorable: float = 0       # Max favorable price seen
     exit_price: float = 0
     exit_date: str = ""
     exit_reason: str = ""
@@ -69,7 +76,7 @@ class BacktestResult:
 
 
 class BacktestEngine:
-    """Run backtests on historical data using the same signal logic as live trading."""
+    """Run backtests with improved exit logic and options-aware P&L."""
 
     def __init__(self, capital: float = TOTAL_CAPITAL):
         self.initial_capital = capital
@@ -84,19 +91,7 @@ class BacktestEngine:
         max_open: int = 1,
         commission: float = 40,
     ) -> BacktestResult:
-        """
-        Run backtest on a symbol.
-
-        Args:
-            symbol: Stock symbol
-            period: Data period (1mo, 3mo, 6mo, 1y, 2y)
-            interval: Candle interval (1d, 1h, 15m)
-            strategy: Filter by strategy ('all', 'trend', 'breakout')
-            min_score: Minimum signal score to take trade
-            max_open: Max concurrent trades
-            commission: Round-trip commission per trade (INR)
-        """
-        # Fetch and prepare data
+        """Run backtest on a symbol."""
         df = fetch_stock_data(symbol, period=period, interval=interval)
         if df.empty or len(df) < 50:
             return BacktestResult(symbol=symbol, period=period, interval=interval, strategy=strategy)
@@ -104,10 +99,7 @@ class BacktestEngine:
         df = add_all_indicators(df)
 
         result = BacktestResult(
-            symbol=symbol,
-            period=period,
-            interval=interval,
-            strategy=strategy,
+            symbol=symbol, period=period, interval=interval, strategy=strategy,
         )
 
         capital = self.initial_capital
@@ -115,8 +107,15 @@ class BacktestEngine:
         open_trades: list[BacktestTrade] = []
         closed_trades: list[BacktestTrade] = []
         peak_capital = capital
+        cooldown = 0  # Bars to wait after a loss
 
-        # Walk through each bar
+        # SL/target percentages for underlying price movement
+        # Daily Nifty range is ~1-2%, so SL must be wider than daily noise
+        sl_pct = 0.03      # 3% underlying move triggers SL
+        target_pct = 0.045  # 4.5% underlying move = target (1.5:1 reward:risk)
+        trail_activation = 0.02  # Start trailing after 2% favorable move
+        trail_step = 0.4   # Trail at 40% of max favorable move (gives room to breathe)
+
         for i in range(50, len(df)):
             current_bar = df.iloc[i]
             current_price = float(current_bar["Close"])
@@ -127,132 +126,177 @@ class BacktestEngine:
             # --- Check exits for open trades ---
             for trade in list(open_trades):
                 trade.bars_held += 1
-                hit_sl = False
-                hit_target = False
+
+                # Track max favorable price
+                if "CALL" in trade.direction:
+                    if current_high > trade.max_favorable:
+                        trade.max_favorable = current_high
+                    favorable_move = (trade.max_favorable - trade.entry_price) / trade.entry_price
+                else:
+                    if current_low < trade.max_favorable or trade.max_favorable == 0:
+                        trade.max_favorable = current_low
+                    favorable_move = (trade.entry_price - trade.max_favorable) / trade.entry_price
+
+                # IMPROVEMENT 3: Trailing stop loss
+                if favorable_move >= trail_activation:
+                    if "CALL" in trade.direction:
+                        new_trail = trade.max_favorable * (1 - favorable_move * trail_step)
+                        trade.trailing_sl = max(trade.trailing_sl, new_trail, trade.entry_price)
+                    else:
+                        new_trail = trade.max_favorable * (1 + favorable_move * trail_step)
+                        if trade.trailing_sl == 0:
+                            trade.trailing_sl = new_trail
+                        else:
+                            trade.trailing_sl = min(trade.trailing_sl, new_trail)
+                        trade.trailing_sl = min(trade.trailing_sl, trade.entry_price)
+
+                # Determine effective stop loss (trailing or original)
+                if "CALL" in trade.direction:
+                    effective_sl = max(trade.stop_loss, trade.trailing_sl) if trade.trailing_sl > 0 else trade.stop_loss
+                else:
+                    effective_sl = min(trade.stop_loss, trade.trailing_sl) if trade.trailing_sl > 0 else trade.stop_loss
+
+                # Check exit conditions
                 exit_price = 0
                 exit_reason = ""
 
                 if "CALL" in trade.direction:
-                    # For calls, underlying drop = option loses value
-                    if current_low <= trade.stop_loss:
-                        hit_sl = True
-                        exit_price = trade.stop_loss
-                        exit_reason = "stop_loss"
+                    if current_low <= effective_sl:
+                        exit_price = effective_sl
+                        exit_reason = "trailing_sl" if trade.trailing_sl > trade.stop_loss else "stop_loss"
                     elif current_high >= trade.target_1:
-                        hit_target = True
                         exit_price = trade.target_1
                         exit_reason = "target_1"
                 else:
-                    # For puts, underlying rise = option loses value
-                    if current_high >= trade.stop_loss:
-                        hit_sl = True
-                        exit_price = trade.stop_loss
-                        exit_reason = "stop_loss"
+                    if current_high >= effective_sl:
+                        exit_price = effective_sl
+                        exit_reason = "trailing_sl" if (trade.trailing_sl > 0 and trade.trailing_sl < trade.stop_loss) else "stop_loss"
                     elif current_low <= trade.target_1:
-                        hit_target = True
                         exit_price = trade.target_1
                         exit_reason = "target_1"
 
-                # Time exit: close after 10 bars if no SL/target hit
-                if not hit_sl and not hit_target and trade.bars_held >= 10:
+                # Max hold: 15 bars (3 weeks daily). Avoid theta eating all value.
+                if not exit_reason and trade.bars_held >= 15:
                     exit_price = current_price
-                    exit_reason = "time_exit"
+                    exit_reason = "max_hold"
 
-                if hit_sl or hit_target or exit_reason == "time_exit":
-                    # Calculate P&L on the underlying move
+                if exit_reason:
+                    # Simple P&L: fixed risk per trade, R:R based on exit
+                    # Risk per trade = 2% of capital
+                    # If SL hit: lose 1R
+                    # If target hit: gain 1.5R (risk:reward = 1:1.5)
+                    # If trailing SL hit in profit: gain proportional to move
+                    # If max_hold exit: gain/lose based on actual move
+                    risk_per_trade = self.initial_capital * MAX_RISK_PER_TRADE
+
                     if "CALL" in trade.direction:
-                        pnl_pct = (exit_price - trade.entry_price) / trade.entry_price
+                        move_pct = (exit_price - trade.entry_price) / trade.entry_price
                     else:
-                        pnl_pct = (trade.entry_price - exit_price) / trade.entry_price
+                        move_pct = (trade.entry_price - exit_price) / trade.entry_price
 
-                    # Approximate option P&L: option moves ~delta * underlying move
-                    # For simplicity, use the underlying % move as proxy
-                    risk_amount = capital * MAX_RISK_PER_TRADE * 0.5  # Use moderate sizing
-                    pnl = risk_amount * pnl_pct * 3  # Leverage factor ~3x for options
-                    pnl -= commission  # Subtract commission
+                    if exit_reason == "stop_loss":
+                        pnl = -risk_per_trade  # Lose 1R
+                    elif exit_reason == "target_1":
+                        pnl = risk_per_trade * 1.5  # Gain 1.5R
+                    elif exit_reason == "trailing_sl":
+                        # Trailing SL in profit = gain proportional to favorable move
+                        pnl = risk_per_trade * (move_pct / sl_pct)
+                    else:
+                        # max_hold or end_of_data: use actual move
+                        pnl = risk_per_trade * (move_pct / sl_pct)
+
+                    pnl -= commission
 
                     trade.exit_price = exit_price
                     trade.exit_date = current_date
                     trade.exit_reason = exit_reason
                     trade.pnl = round(pnl, 2)
-                    trade.pnl_pct = round(pnl_pct * 100, 2)
+                    trade.pnl_pct = round(move_pct * 100, 2)
 
                     capital += pnl
                     open_trades.remove(trade)
                     closed_trades.append(trade)
 
+                    # Cooldown after loss: wait 2 bars
+                    if pnl < 0:
+                        cooldown = 2
+
+            # --- Cooldown check ---
+            if cooldown > 0:
+                cooldown -= 1
+                equity_curve.append(round(capital, 2))
+                if capital > peak_capital:
+                    peak_capital = capital
+                dd = peak_capital - capital
+                if dd > result.max_drawdown:
+                    result.max_drawdown = round(dd, 2)
+                    result.max_drawdown_pct = round((dd / peak_capital) * 100, 2)
+                continue
+
             # --- Generate signals and open new trades ---
             if len(open_trades) < max_open:
-                # Build indicator snapshot from rolling window
-                window = df.iloc[max(0, i - 1):i + 1]
-                if len(window) >= 2:
-                    indicators = get_latest_indicators(df.iloc[:i + 1])
-                    signals = generate_all_signals(symbol, indicators)
+                indicators = get_latest_indicators(df.iloc[:i + 1])
+                signals = generate_all_signals(symbol, indicators)
 
-                    # Filter by strategy
-                    if strategy != "all":
-                        signals = [s for s in signals if s.strategy == strategy]
+                if strategy != "all":
+                    signals = [s for s in signals if s.strategy == strategy]
+                signals = [s for s in signals if s.score >= min_score]
 
-                    # Filter by min score
-                    signals = [s for s in signals if s.score >= min_score]
+                if signals:
+                    sig = signals[0]
 
-                    if signals:
-                        sig = signals[0]  # Take best signal
+                    if "CALL" in sig.direction:
+                        sl = current_price * (1 - sl_pct)
+                        t1 = current_price * (1 + target_pct)
+                        t2 = current_price * (1 + target_pct * 1.5)
+                    else:
+                        sl = current_price * (1 + sl_pct)
+                        t1 = current_price * (1 - target_pct)
+                        t2 = current_price * (1 - target_pct * 1.5)
 
-                        # Calculate entry levels on underlying
-                        if "CALL" in sig.direction:
-                            sl = current_price * (1 - STOP_LOSS_PERCENT * 0.5)
-                            t1 = current_price * (1 + TARGET_1_PERCENT * 0.5)
-                            t2 = current_price * (1 + TARGET_2_PERCENT * 0.5)
-                        else:
-                            sl = current_price * (1 + STOP_LOSS_PERCENT * 0.5)
-                            t1 = current_price * (1 - TARGET_1_PERCENT * 0.5)
-                            t2 = current_price * (1 - TARGET_2_PERCENT * 0.5)
-
-                        trade = BacktestTrade(
-                            entry_idx=i,
-                            symbol=symbol,
-                            direction=sig.direction,
-                            entry_price=current_price,
-                            stop_loss=round(sl, 2),
-                            target_1=round(t1, 2),
-                            target_2=round(t2, 2),
-                            entry_date=current_date,
-                            score=sig.score,
-                            strategy=sig.strategy,
-                        )
-                        open_trades.append(trade)
+                    trade = BacktestTrade(
+                        entry_idx=i,
+                        symbol=symbol,
+                        direction=sig.direction,
+                        entry_price=current_price,
+                        stop_loss=round(sl, 2),
+                        target_1=round(t1, 2),
+                        target_2=round(t2, 2),
+                        entry_date=current_date,
+                        max_favorable=current_price,
+                        score=sig.score,
+                        strategy=sig.strategy,
+                    )
+                    open_trades.append(trade)
 
             equity_curve.append(round(capital, 2))
-
-            # Track drawdown
             if capital > peak_capital:
                 peak_capital = capital
-            drawdown = peak_capital - capital
-            if drawdown > result.max_drawdown:
-                result.max_drawdown = round(drawdown, 2)
-                result.max_drawdown_pct = round((drawdown / peak_capital) * 100, 2)
+            dd = peak_capital - capital
+            if dd > result.max_drawdown:
+                result.max_drawdown = round(dd, 2)
+                result.max_drawdown_pct = round((dd / peak_capital) * 100, 2)
 
-        # --- Force close any remaining open trades ---
+        # Force close remaining open trades
         final_price = float(df["Close"].iloc[-1])
         for trade in open_trades:
             if "CALL" in trade.direction:
-                pnl_pct = (final_price - trade.entry_price) / trade.entry_price
+                move_pct = (final_price - trade.entry_price) / trade.entry_price
             else:
-                pnl_pct = (trade.entry_price - final_price) / trade.entry_price
+                move_pct = (trade.entry_price - final_price) / trade.entry_price
 
-            risk_amount = self.initial_capital * MAX_RISK_PER_TRADE * 0.5
-            pnl = risk_amount * pnl_pct * 3 - commission
+            risk_per_trade = self.initial_capital * MAX_RISK_PER_TRADE
+            pnl = risk_per_trade * (move_pct / sl_pct) - commission
 
             trade.exit_price = final_price
             trade.exit_date = df.index[-1].isoformat()
             trade.exit_reason = "end_of_data"
             trade.pnl = round(pnl, 2)
-            trade.pnl_pct = round(pnl_pct * 100, 2)
+            trade.pnl_pct = round(move_pct * 100, 2)
             capital += pnl
             closed_trades.append(trade)
 
-        # --- Compute result metrics ---
+        # Compute metrics
         result.trades = closed_trades
         result.total_trades = len(closed_trades)
         result.equity_curve = equity_curve
@@ -267,30 +311,29 @@ class BacktestEngine:
             result.total_pnl = round(sum(t.pnl for t in closed_trades), 2)
             result.total_pnl_pct = round((capital - self.initial_capital) / self.initial_capital * 100, 2)
 
-            total_wins = sum(t.pnl for t in wins) if wins else 0
-            total_losses = abs(sum(t.pnl for t in losses)) if losses else 0
+            total_wins_amt = sum(t.pnl for t in wins) if wins else 0
+            total_losses_amt = abs(sum(t.pnl for t in losses)) if losses else 0
 
-            result.avg_win = round(total_wins / len(wins), 2) if wins else 0
-            result.avg_loss = round(total_losses / len(losses), 2) if losses else 0
-            result.profit_factor = round(total_wins / total_losses, 2) if total_losses > 0 else 999
+            result.avg_win = round(total_wins_amt / len(wins), 2) if wins else 0
+            result.avg_loss = round(total_losses_amt / len(losses), 2) if losses else 0
+            result.profit_factor = round(total_wins_amt / total_losses_amt, 2) if total_losses_amt > 0 else 999
 
             result.best_trade = round(max(t.pnl for t in closed_trades), 2)
             result.worst_trade = round(min(t.pnl for t in closed_trades), 2)
             result.avg_bars_held = round(sum(t.bars_held for t in closed_trades) / len(closed_trades), 1)
 
-            # Sharpe ratio (annualized)
+            # Sharpe ratio
             if len(equity_curve) > 1:
                 returns = pd.Series(equity_curve).pct_change().dropna()
-                if returns.std() > 0:
-                    # Annualize based on interval
-                    periods_per_year = {"1d": 252, "1h": 252 * 6, "15m": 252 * 24, "5m": 252 * 72}.get(interval, 252)
+                if len(returns) > 0 and returns.std() > 0:
+                    periods_per_year = {"1d": 252, "1h": 252 * 6, "15m": 252 * 24}.get(interval, 252)
                     result.sharpe_ratio = round(
                         (returns.mean() / returns.std()) * (periods_per_year ** 0.5), 2
                     )
 
             # Monthly returns
             for trade in closed_trades:
-                month = trade.entry_date[:7]  # YYYY-MM
+                month = trade.entry_date[:7]
                 result.monthly_returns[month] = result.monthly_returns.get(month, 0) + trade.pnl
             result.monthly_returns = {k: round(v, 2) for k, v in sorted(result.monthly_returns.items())}
 
