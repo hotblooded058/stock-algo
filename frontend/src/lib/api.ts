@@ -1,4 +1,8 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+// Auto-detect: use same hostname as the browser (works from phone, laptop, etc.)
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== "undefined"
+    ? `http://${window.location.hostname}:8000/api`
+    : "http://localhost:8000/api");
 
 async function fetcher<T>(url: string): Promise<T> {
   const controller = new AbortController();
