@@ -1,14 +1,19 @@
-// Auto-detect: use same hostname as the browser (works from phone, laptop, etc.)
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== "undefined"
-    ? `http://${window.location.hostname}:8000/api`
-    : "http://localhost:8000/api");
+// Compute API base URL dynamically on each request
+// When opened from phone (192.168.1.6:3000), API calls go to 192.168.1.6:8000
+// When opened from localhost:3000, API calls go to localhost:8000
+function getApiBase(): string {
+  if (typeof window !== "undefined") {
+    return `http://${window.location.hostname}:8000/api`;
+  }
+  return "http://localhost:8000/api";
+}
 
 async function fetcher<T>(url: string): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
-    const res = await fetch(`${API_BASE}${url}`, { signal: controller.signal });
+    const base = getApiBase();
+    const res = await fetch(`${base}${url}`, { signal: controller.signal });
     if (!res.ok) throw new Error(`API error: ${res.status}`);
     return res.json();
   } finally {
@@ -20,7 +25,8 @@ async function poster<T>(url: string, body?: unknown): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
-    const res = await fetch(`${API_BASE}${url}`, {
+    const base = getApiBase();
+    const res = await fetch(`${base}${url}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined,

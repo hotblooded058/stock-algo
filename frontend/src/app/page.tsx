@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { market, system, trades, type VixData, type ScanResult, type TradeStats } from "@/lib/api";
+import { useEffect, useState, useReducer } from "react";
 
 function MetricCard({ title, value, subtitle, color = "text-white" }: {
   title: string; value: string; subtitle?: string; color?: string;
@@ -15,63 +14,100 @@ function MetricCard({ title, value, subtitle, color = "text-white" }: {
   );
 }
 
+interface DashData {
+  vix: number | null;
+  vixMood: string;
+  vixChange: number;
+  capital: number;
+  dailyPnl: number;
+  canTrade: boolean;
+  winRate: number;
+  closedTrades: number;
+  totalPnl: number;
+  profitFactor: number;
+  db: Record<string, number>;
+  loaded: boolean;
+  error: string;
+}
+
+interface ScanSignal {
+  symbol: string;
+  name: string;
+  price: number;
+  change_pct: number;
+  direction: string;
+  score: number;
+  strength: string;
+  strategy: string;
+  reasons: string[];
+}
+
+const defaultData: DashData = {
+  vix: null, vixMood: "", vixChange: 0,
+  capital: 0, dailyPnl: 0, canTrade: false,
+  winRate: 0, closedTrades: 0, totalPnl: 0, profitFactor: 0,
+  db: {},
+  loaded: false, error: "",
+};
+
 export default function Dashboard() {
-  const [vix, setVix] = useState<VixData | null>(null);
-  const [topSignals, setTopSignals] = useState<ScanResult[]>([]);
-  const [stats, setStats] = useState<TradeStats | null>(null);
-  const [systemStatus, setSystemStatus] = useState<{
-    risk: { capital: number; daily_pnl: number; can_trade: boolean };
-    db: Record<string, number>;
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashData>(defaultData);
+  const [signals, setSignals] = useState<ScanSignal[]>([]);
   const [scanning, setScanning] = useState(false);
-  const [error, setError] = useState("");
-  const [lastUpdated, setLastUpdated] = useState("");
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
-    async function load() {
+    const host = window.location.hostname;
+    const api = `http://${host}:8000/api`;
+
+    async function loadData() {
       try {
-        const [v, sys, st] = await Promise.all([
-          market.vix().catch(() => null),
-          system.status().catch(() => null),
-          trades.stats().catch(() => null),
+        const [vixRes, sysRes, statsRes] = await Promise.all([
+          fetch(`${api}/market/vix`).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(`${api}/system/status`).then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch(`${api}/trades/stats`).then(r => r.ok ? r.json() : null).catch(() => null),
         ]);
-        if (!v && !sys && !st) {
-          setError("Cannot connect to backend. Is the server running on port 8000?");
-        }
-        setVix(v);
-        setSystemStatus(sys);
-        setStats(st);
-        setLastUpdated(new Date().toLocaleTimeString("en-IN"));
-      } catch (e) {
-        setError("Backend connection failed. Start with: python3 -m uvicorn backend.app:app --port 8000");
-        console.error("Load error:", e);
-      } finally {
-        setLoading(false);
+
+        const newData: DashData = {
+          vix: vixRes?.vix ?? null,
+          vixMood: vixRes?.mood ?? "",
+          vixChange: vixRes?.change ?? 0,
+          capital: sysRes?.risk?.capital ?? 0,
+          dailyPnl: sysRes?.risk?.daily_pnl ?? 0,
+          canTrade: sysRes?.risk?.can_trade ?? false,
+          winRate: statsRes?.win_rate ?? 0,
+          closedTrades: statsRes?.closed_trades ?? 0,
+          totalPnl: statsRes?.total_pnl ?? 0,
+          profitFactor: statsRes?.profit_factor ?? 0,
+          db: sysRes?.db ?? {},
+          loaded: true,
+          error: (!vixRes && !sysRes && !statsRes) ? "Cannot connect to backend" : "",
+        };
+
+        setData(newData);
+        forceUpdate();
+      } catch {
+        setData({ ...defaultData, loaded: true, error: "Backend connection failed" });
+        forceUpdate();
       }
     }
-    load();
+
+    loadData();
   }, []);
 
   const handleScan = async () => {
     setScanning(true);
     try {
-      const data = await market.scan();
-      setTopSignals(data.signals);
+      const host = window.location.hostname;
+      const res = await fetch(`http://${host}:8000/api/market/scan`);
+      const json = await res.json();
+      setSignals(json.signals || []);
     } catch {
-      console.error("Scan failed");
+      // ignore
     } finally {
       setScanning(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-gray-500">Loading dashboard...</div>
-      </div>
-    );
-  }
 
   return (
     <div className="p-6 space-y-6 max-w-7xl">
@@ -81,48 +117,45 @@ export default function Dashboard() {
           <p className="text-sm text-gray-500 mt-1">Options trading decision support</p>
         </div>
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${systemStatus?.risk?.can_trade ? "bg-green-500" : "bg-red-500"}`} />
+          <div className={`w-2 h-2 rounded-full ${data.canTrade ? "bg-green-500" : "bg-red-500"}`} />
           <span className="text-sm text-gray-400">
-            {systemStatus?.risk?.can_trade ? "Ready to trade" : "Trading paused"}
+            {data.canTrade ? "Ready to trade" : "Trading paused"}
           </span>
         </div>
       </div>
 
-      {/* Error Banner */}
-      {error && (
+      {data.error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-400">
-          {error}
+          {data.error}
         </div>
       )}
 
-      {/* Top Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <MetricCard
           title="India VIX"
-          value={vix ? vix.vix.toFixed(2) : "--"}
-          subtitle={vix?.mood}
-          color={vix && vix.vix > 20 ? "text-red-400" : "text-green-400"}
+          value={data.vix ? data.vix.toFixed(2) : "--"}
+          subtitle={data.vixMood || undefined}
+          color={data.vix && data.vix > 20 ? "text-red-400" : "text-green-400"}
         />
         <MetricCard
           title="Capital"
-          value={systemStatus ? `₹${systemStatus.risk.capital.toLocaleString("en-IN")}` : "--"}
-          subtitle={systemStatus ? `Daily P&L: ₹${systemStatus.risk.daily_pnl}` : undefined}
+          value={data.capital ? `₹${data.capital.toLocaleString("en-IN")}` : "--"}
+          subtitle={data.loaded ? `Daily P&L: ₹${data.dailyPnl}` : undefined}
         />
         <MetricCard
           title="Win Rate"
-          value={stats ? `${stats.win_rate}%` : "--"}
-          subtitle={stats ? `${stats.closed_trades} trades` : undefined}
-          color={stats && stats.win_rate >= 50 ? "text-green-400" : "text-orange-400"}
+          value={data.loaded ? `${data.winRate}%` : "--"}
+          subtitle={data.loaded ? `${data.closedTrades} trades` : undefined}
+          color={data.winRate >= 50 ? "text-green-400" : "text-orange-400"}
         />
         <MetricCard
           title="Total P&L"
-          value={stats ? `₹${stats.total_pnl.toLocaleString("en-IN")}` : "--"}
-          subtitle={stats ? `PF: ${stats.profit_factor}` : undefined}
-          color={stats && stats.total_pnl >= 0 ? "text-green-400" : "text-red-400"}
+          value={data.loaded ? `₹${data.totalPnl.toLocaleString("en-IN")}` : "--"}
+          subtitle={data.loaded ? `PF: ${data.profitFactor}` : undefined}
+          color={data.totalPnl >= 0 ? "text-green-400" : "text-red-400"}
         />
       </div>
 
-      {/* Quick Scan */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Quick Scan</h2>
@@ -135,7 +168,7 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {topSignals.length > 0 ? (
+        {signals.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -149,7 +182,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {topSignals.map((sig, i) => (
+                {signals.map((sig, i) => (
                   <tr key={i} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                     <td className="py-2 px-3 font-medium">{sig.name}</td>
                     <td className="py-2 px-3">
@@ -193,17 +226,16 @@ export default function Dashboard() {
           </div>
         ) : (
           <p className="text-gray-500 text-sm">
-            Click &quot;Scan Watchlist&quot; to find trading opportunities across your watchlist
+            Click &quot;Scan Watchlist&quot; to find trading opportunities
           </p>
         )}
       </div>
 
-      {/* System Status */}
-      {systemStatus && (
+      {Object.keys(data.db).length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
           <h2 className="text-lg font-semibold mb-3">Database</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            {Object.entries(systemStatus.db).map(([table, count]) => (
+            {Object.entries(data.db).map(([table, count]) => (
               <div key={table} className="flex justify-between bg-gray-800/50 rounded-lg px-3 py-2">
                 <span className="text-gray-400 capitalize">{table.replace("_", " ")}</span>
                 <span className="font-mono text-gray-200">{count}</span>
