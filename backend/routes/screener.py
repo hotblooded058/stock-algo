@@ -193,6 +193,15 @@ def scan_stocks(
 
     results.sort(key=lambda x: x["score"], reverse=True)
 
+    # Deduplicate: keep only the best signal per stock
+    seen = set()
+    unique_results = []
+    for r in results:
+        if r["symbol"] not in seen:
+            seen.add(r["symbol"])
+            unique_results.append(r)
+    results = unique_results
+
     # Cache the results
     _scan_cache["results"] = results
     _scan_cache["last_updated"] = datetime.now()
