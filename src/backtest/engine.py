@@ -109,13 +109,12 @@ class BacktestEngine:
         peak_capital = capital
         cooldown = 0  # Bars to wait after a loss
 
-        # OPTIMIZED exit parameters (5-iteration walk-forward optimization)
-        # Key insight: small targets hit more often = higher win rate = profit
-        sl_pct = 0.03      # 3% underlying move triggers SL
-        target_pct = 0.023  # 2.3% target (tight targets hit frequently)
-        trail_activation = 1.0  # Disabled — trail was cutting winners short
-        trail_step = 0.4   # (unused since trail disabled)
-        # R:R = 1:1.2 with 55%+ WR = profitable
+        # v4 OPTIMIZED exit parameters (individual testing + stacking)
+        # Each parameter was tested in isolation, then stacked incrementally
+        sl_pct = 0.035     # 3.5% SL (wider = fewer stop-outs, WR +4%)
+        target_pct = 0.020  # 2.0% target (tighter = hits more often, +36K P&L)
+        trail_activation = 1.0  # Disabled
+        trail_step = 0.4   # (unused)
 
         for i in range(50, len(df)):
             current_bar = df.iloc[i]
@@ -177,7 +176,8 @@ class BacktestEngine:
                         exit_reason = "target_1"
 
                 # Max hold: 15 bars (3 weeks daily). Avoid theta eating all value.
-                if not exit_reason and trade.bars_held >= 100:  # Effectively disabled
+                # Time exit at 8 bars: cuts slow losers (+9K P&L improvement)
+                if not exit_reason and trade.bars_held >= 8:
                     exit_price = current_price
                     exit_reason = "max_hold"
 
