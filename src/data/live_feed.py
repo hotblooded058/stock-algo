@@ -149,3 +149,98 @@ def get_live_ltp(symbol: str) -> float | None:
     if symbol in quotes:
         return quotes[symbol]["ltp"]
     return None
+
+
+def get_historical_candles(symbol: str, token: str = None, days: int = 90,
+                           interval: str = "ONE_DAY") -> list[dict]:
+    """
+    Fetch historical candles from AngelOne.
+    Returns list of {timestamp, open, high, low, close, volume}.
+    """
+    session = _get_session()
+    if not session:
+        return []
+
+    if not token:
+        token_map = _load_instrument_map()
+        token = token_map.get(symbol)
+    if not token:
+        return []
+
+    try:
+        from datetime import timedelta
+        params = {
+            "exchange": "NSE",
+            "symboltoken": token,
+            "interval": interval,
+            "fromdate": (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d 09:15"),
+            "todate": datetime.now().strftime("%Y-%m-%d 15:30"),
+        }
+        data = session.getCandleData(params)
+        if data and data.get("data"):
+            return [
+                {
+                    "timestamp": c[0],
+                    "open": c[1],
+                    "high": c[2],
+                    "low": c[3],
+                    "close": c[4],
+                    "volume": c[5],
+                }
+                for c in data["data"]
+            ]
+    except Exception as e:
+        print(f"AngelOne historical error for {symbol}: {e}")
+
+    return []
+
+
+def get_fresh_dataframe(symbol: str, token: str = None, days: int = 90):
+    """
+    Get a pandas DataFrame with fresh data from AngelOne.
+    Includes today's live candle if market is open.
+    Falls back to Yahoo Finance if AngelOne fails.
+
+    This is the KEY function — gives indicators based on LIVE data,
+    not yesterday's stale Yahoo data.
+    """
+    import pandas as pd
+
+    candles = get_historical_candles(symbol, token, days)
+
+    if candles:
+        # Convert AngelOne candles to DataFrame
+        df = pd.DataFrame(candles)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.set_index("timestamp")
+        df.columns = ["Open", "High", "Low", "Close", "Volume"]
+        df.index.name = "Datetime"
+
+        # Append live quote as today's candle if market is open
+        quotes = get_live_quotes([symbol])
+        if symbol in quotes:
+            q = quotes[symbol]
+            today = pd.Timestamp(datetime.now().date())
+            if today not in df.index:
+                live_row = pd.DataFrame({
+                    "Open": [q["open"]],
+                    "High": [q["high"]],
+                    "Low": [q["low"]],
+                    "Close": [q["ltp"]],
+                    "Volume": [0],
+                }, index=pd.DatetimeIndex([today], name="Datetime"))
+                df = pd.concat([df, live_row])
+
+        return df
+
+    # Fallback to Yahoo
+    from src.data.fetcher import fetch_stock_data
+    from src.data.fno_stocks import FNO_STOCKS
+    info = FNO_STOCKS.get(symbol, {})
+    yahoo = info.get("yahoo", f"{symbol}.NS")
+    df = fetch_stock_data(yahoo, period="3mo", interval="1d")
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    return df

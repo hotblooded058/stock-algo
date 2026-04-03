@@ -9,7 +9,7 @@ import threading
 import pandas as pd
 
 from src.data.fno_stocks import FNO_STOCKS, get_sectors
-from src.data.live_feed import get_live_quotes
+from src.data.live_feed import get_live_quotes, get_fresh_dataframe
 from src.data.fetcher import fetch_stock_data
 from src.indicators.technical import add_all_indicators, get_latest_indicators
 from src.signals.generator import generate_all_signals
@@ -331,7 +331,11 @@ def scan_watchlist():
         yahoo = info.get("yahoo", f"{sym}.NS")
 
         try:
-            df = _fix_df(fetch_stock_data(yahoo, period="3mo", interval="1d"))
+            # Use AngelOne for fresh data (indicators calculated on LIVE data)
+            df = get_fresh_dataframe(sym)
+            if df.empty or len(df) < 30:
+                # Fallback to Yahoo
+                df = _fix_df(fetch_stock_data(yahoo, period="3mo", interval="1d"))
             if df.empty or len(df) < 30:
                 continue
 
