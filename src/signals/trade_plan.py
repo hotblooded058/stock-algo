@@ -43,15 +43,14 @@ class TradePlanGenerator:
         lot_size = info.get("lot", 1)
         sector = info.get("sector", "Other")
 
-        # Fetch data — try AngelOne first (live), fallback to Yahoo
-        from src.data.live_feed import get_fresh_dataframe
+        # Use same data source as screener (Yahoo) for consistency
+        # AngelOne historical has rate limits and gives slightly different
+        # candle data, causing screener/trade-plan signal mismatch
         import pandas as pd
 
-        df = get_fresh_dataframe(symbol)
-        if df.empty or len(df) < 30:
-            df = fetch_stock_data(yahoo, period="3mo", interval="1d")
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+        df = fetch_stock_data(yahoo, period="3mo", interval="1d")
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
         if df.empty or len(df) < 30:
             return {"error": f"Could not fetch data for {symbol}"}
 

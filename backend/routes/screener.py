@@ -277,7 +277,10 @@ def clear_cache():
 @router.get("/trade-plan")
 def get_trade_plan(symbol: str = Query(..., description="NSE symbol e.g. SBIN, RELIANCE")):
     """Generate complete trade plan for a stock."""
-    return plan_generator.generate(symbol.upper())
+    import json
+    result = plan_generator.generate(symbol.upper())
+    # Convert numpy types to native Python for JSON serialization
+    return json.loads(json.dumps(result, default=lambda x: x.item() if hasattr(x, 'item') else str(x)))
 
 
 @router.get("/watchlist")
