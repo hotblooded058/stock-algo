@@ -128,6 +128,15 @@ def scan_watchlist():
     """Scan all watchlist stocks and return signals sorted by score."""
     from src.signals.generator import generate_all_signals
 
+    # Get VIX for consistent signal scoring
+    vix_val = None
+    try:
+        vix_df = fetch_vix()
+        if not vix_df.empty:
+            vix_val = float(vix_df["Close"].iloc[-1])
+    except Exception:
+        pass
+
     results = []
     for name, symbol in WATCHLIST_MAP.items():
         try:
@@ -136,7 +145,7 @@ def scan_watchlist():
                 continue
             df = add_all_indicators(df)
             indicators = get_latest_indicators(df)
-            sigs = generate_all_signals(symbol, indicators)
+            sigs = generate_all_signals(symbol, indicators, vix=vix_val)
 
             price = float(df["Close"].iloc[-1])
             prev_close = float(df["Close"].iloc[-2]) if len(df) > 1 else price
@@ -159,4 +168,4 @@ def scan_watchlist():
             continue
 
     results.sort(key=lambda x: x["score"], reverse=True)
-    return {"signals": results, "count": len(results)}
+    return {"signals": results, "count": len(results), "vix": vix_val}

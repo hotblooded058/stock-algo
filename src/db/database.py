@@ -105,7 +105,18 @@ class Database:
             if 'reasons' in signal_data and isinstance(signal_data['reasons'], list):
                 signal_data['reasons'] = json.dumps(signal_data['reasons'])
             if 'indicators' in signal_data and isinstance(signal_data['indicators'], dict):
-                signal_data['indicators'] = json.dumps(signal_data['indicators'])
+                # Convert numpy types to native Python for JSON serialization
+                clean_indicators = {}
+                for k, v in signal_data['indicators'].items():
+                    if v is None:
+                        clean_indicators[k] = None
+                    elif isinstance(v, bool):
+                        clean_indicators[k] = v
+                    elif hasattr(v, 'item'):  # numpy scalar
+                        clean_indicators[k] = v.item()
+                    else:
+                        clean_indicators[k] = v
+                signal_data['indicators'] = json.dumps(clean_indicators)
             cursor = conn.execute(
                 """INSERT INTO signals
                    (symbol, direction, score, strength, strategy, reasons, indicators, created_at)

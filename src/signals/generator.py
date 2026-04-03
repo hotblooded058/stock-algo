@@ -192,18 +192,18 @@ def _apply_rsi_filter(signal: Signal, rsi: float | None) -> Signal:
     penalty = 0
     warning = None
 
-    if "PUT" in signal.direction and rsi < 35:
-        penalty = 20
-        warning = f"⚠️ RSI at {rsi:.1f} is near oversold — bounce likely, score reduced by {penalty}"
-    elif "PUT" in signal.direction and rsi < 30:
-        penalty = 30
+    if "PUT" in signal.direction and rsi < 30:
+        penalty = 25
         warning = f"⚠️ RSI at {rsi:.1f} is oversold — high bounce risk, score reduced by {penalty}"
-    elif "CALL" in signal.direction and rsi > 65:
-        penalty = 20
-        warning = f"⚠️ RSI at {rsi:.1f} is near overbought — reversal likely, score reduced by {penalty}"
+    elif "PUT" in signal.direction and rsi < 35:
+        penalty = 15
+        warning = f"⚠️ RSI at {rsi:.1f} is near oversold — bounce likely, score reduced by {penalty}"
     elif "CALL" in signal.direction and rsi > 70:
-        penalty = 30
+        penalty = 25
         warning = f"⚠️ RSI at {rsi:.1f} is overbought — high reversal risk, score reduced by {penalty}"
+    elif "CALL" in signal.direction and rsi > 65:
+        penalty = 15
+        warning = f"⚠️ RSI at {rsi:.1f} is near overbought — reversal likely, score reduced by {penalty}"
 
     if penalty > 0:
         signal.score = max(signal.score - penalty, 0)
@@ -313,20 +313,23 @@ def generate_oi_signal(symbol: str, indicators: dict,
 def _apply_vix_modifier(signal: Signal, vix: float = None) -> Signal:
     """
     Adjust signal score based on VIX level.
-    High VIX = options expensive = penalize buy signals.
+    High VIX = options expensive = add warning but don't aggressively reduce score.
+    We want signals to still show up so the trader can decide.
     """
     if signal is None or vix is None:
         return signal
 
-    if vix > 25:
-        signal.score = max(signal.score - 15, 0)
-        signal.reasons.append(f"VIX {vix:.1f} very high — options expensive, score reduced")
+    if vix > 30:
+        signal.score = max(signal.score - 10, 0)
+        signal.reasons.append(f"⚠️ VIX {vix:.1f} very high — options expensive, prefer selling strategies")
+    elif vix > 25:
+        signal.score = max(signal.score - 5, 0)
+        signal.reasons.append(f"⚠️ VIX {vix:.1f} high — premiums elevated, use smaller positions")
     elif vix > 20:
-        signal.score = max(signal.score - 8, 0)
-        signal.reasons.append(f"VIX {vix:.1f} elevated — slight penalty")
+        signal.reasons.append(f"VIX {vix:.1f} elevated — use wider stop losses")
     elif vix < 13:
         signal.score = min(signal.score + 5, 100)
-        signal.reasons.append(f"VIX {vix:.1f} low — options cheap, bonus")
+        signal.reasons.append(f"VIX {vix:.1f} low — options cheap, good for buying")
 
     return signal
 
