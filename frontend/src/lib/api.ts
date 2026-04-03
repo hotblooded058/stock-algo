@@ -386,6 +386,8 @@ export const screener = {
     fetcher<{ signals: ScreenerSignal[]; count: number; source: string; timestamp: string }>(
       "/screener/watchlist/scan"
     ),
+  tradePlan: (symbol: string) =>
+    fetcher<Record<string, unknown>>(`/screener/trade-plan?symbol=${symbol}`),
 };
 
 // ========================================================

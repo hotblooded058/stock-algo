@@ -13,7 +13,10 @@ from src.data.fetcher import fetch_stock_data
 from src.indicators.technical import add_all_indicators, get_latest_indicators
 from src.signals.generator import generate_all_signals
 
+from src.signals.trade_plan import TradePlanGenerator
+
 router = APIRouter()
+plan_generator = TradePlanGenerator()
 
 # In-memory caches
 _scan_cache = {
@@ -262,6 +265,12 @@ def clear_cache():
 # ============================================================
 # WATCHLIST — User's selected stocks with fast 15-sec refresh
 # ============================================================
+
+@router.get("/trade-plan")
+def get_trade_plan(symbol: str = Query(..., description="NSE symbol e.g. SBIN, RELIANCE")):
+    """Generate complete trade plan for a stock."""
+    return plan_generator.generate(symbol.upper())
+
 
 @router.get("/watchlist")
 def get_watchlist():

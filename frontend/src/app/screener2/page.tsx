@@ -24,6 +24,11 @@ export default function ScreenerPage() {
   // Score filter
   const [minScore, setMinScore] = useState(0);
 
+  // Trade plan modal
+  const [planSymbol, setPlanSymbol] = useState<string | null>(null);
+  const [plan, setPlan] = useState<Record<string, unknown> | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+
   // Timers
   const screenerTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const watchlistTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -111,6 +116,21 @@ export default function ScreenerPage() {
   const handleRemoveFromWatchlist = async (sym: string) => {
     await screener.watchlistRemove(sym);
     fetchWatchlist();
+  };
+
+  // Trade plan
+  const openTradePlan = async (symbol: string) => {
+    setPlanSymbol(symbol);
+    setPlan(null);
+    setPlanLoading(true);
+    try {
+      const data = await screener.tradePlan(symbol);
+      setPlan(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setPlanLoading(false);
+    }
   };
 
   // Filter signals
@@ -203,6 +223,8 @@ export default function ScreenerPage() {
               <tbody>
                 {filteredWatchlist.map((sig, i) => (
                   <StockRow key={`${sig.symbol}-${i}`} sig={sig}
+                    onClick={() => openTradePlan(sig.symbol)}
+                    selected={planSymbol === sig.symbol}
                     onRemove={() => handleRemoveFromWatchlist(sig.symbol)} showRemove />
                 ))}
                 {filteredWatchlist.length === 0 && (
@@ -266,7 +288,9 @@ export default function ScreenerPage() {
               </thead>
               <tbody>
                 {filteredScreener.map((sig, i) => (
-                  <StockRow key={`${sig.symbol}-${sig.strategy}-${i}`} sig={sig} />
+                  <StockRow key={`${sig.symbol}-${sig.strategy}-${i}`} sig={sig}
+                    onClick={() => openTradePlan(sig.symbol)}
+                    selected={planSymbol === sig.symbol} />
                 ))}
                 {filteredScreener.length === 0 && (
                   <tr><td colSpan={12} className="py-8 text-center text-gray-500">
@@ -278,16 +302,200 @@ export default function ScreenerPage() {
           </div>
         </>
       )}
+
+      {/* TRADE PLAN PANEL */}
+      {planSymbol && (
+        <TradePlanPanel
+          symbol={planSymbol}
+          plan={plan}
+          loading={planLoading}
+          onClose={() => { setPlanSymbol(null); setPlan(null); }}
+        />
+      )}
     </div>
   );
 }
 
-function StockRow({ sig, onRemove, showRemove = false }: {
+// ============================================================
+// TRADE PLAN PANEL
+// ============================================================
+
+function TradePlanPanel({ symbol, plan, loading, onClose }: {
+  symbol: string; plan: Record<string, unknown> | null; loading: boolean; onClose: () => void;
+}) {
+  if (loading) {
+    return (
+      <div className="bg-gray-900 border border-orange-500/30 rounded-xl p-6 mt-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-bold">Generating trade plan for {symbol}...</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white">Close</button>
+        </div>
+        <div className="mt-4 text-gray-500 animate-pulse">Analyzing indicators, computing Greeks, building plan...</div>
+      </div>
+    );
+  }
+
+  if (!plan) return null;
+
+  const verdict = plan.verdict as string || "NO TRADE";
+  const confidence = plan.confidence as number || 0;
+  const confLabel = plan.confidence_label as string || "";
+  const isCall = verdict.includes("CALL");
+  const isPut = verdict.includes("PUT");
+  const noTrade = verdict === "NO TRADE";
+
+  const mkt = plan.market as Record<string, unknown> || {};
+  const opt = plan.option as Record<string, unknown> || {};
+  const tradePlan = plan.plan as Record<string, unknown> || {};
+  const checklist = plan.checklist as { check: string; passed: boolean; critical: boolean }[] || [];
+  const warnings = plan.warnings as string[] || [];
+  const exitRules = plan.exit_rules as string[] || [];
+  const avoidIf = plan.avoid_if as string[] || [];
+  const reasons = plan.reasons as string[] || [];
+
+  return (
+    <div className="bg-gray-900 border border-orange-500/30 rounded-xl p-5 mt-4 space-y-4">
+      {/* Header */}
+      <div className="flex justify-between items-start">
+        <div>
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold">{symbol} Trade Plan</h2>
+            <span className={`px-3 py-1 rounded-lg text-sm font-bold ${
+              isCall ? "bg-green-500/20 text-green-400" : isPut ? "bg-red-500/20 text-red-400" : "bg-gray-700 text-gray-400"
+            }`}>{verdict}</span>
+            <span className={`px-2 py-0.5 rounded text-xs ${
+              confLabel === "HIGH" ? "bg-green-500/20 text-green-400" :
+              confLabel === "MEDIUM" ? "bg-orange-500/20 text-orange-400" : "bg-red-500/20 text-red-400"
+            }`}>{confidence}% {confLabel}</span>
+          </div>
+          <p className="text-sm text-gray-500 mt-1">
+            {plan.sector as string} | Spot: ₹{(plan.spot_price as number)?.toLocaleString("en-IN")} |
+            {mkt.regime as string} | {mkt.direction as string}
+          </p>
+        </div>
+        <button onClick={onClose} className="text-gray-500 hover:text-white text-lg">x</button>
+      </div>
+
+      {noTrade ? (
+        /* NO TRADE view */
+        <div className="space-y-3">
+          <div className="bg-gray-800 rounded-lg p-4">
+            <p className="text-orange-400 font-semibold mb-2">Why no trade?</p>
+            {(plan.reasons_to_skip as string[] || []).map((r, i) => (
+              <p key={i} className="text-sm text-gray-400">- {r}</p>
+            ))}
+          </div>
+          <div className="bg-gray-800 rounded-lg p-4">
+            <p className="text-blue-400 font-semibold mb-2">Wait for:</p>
+            {(plan.wait_for as string[] || []).map((r, i) => (
+              <p key={i} className="text-sm text-gray-400">- {r}</p>
+            ))}
+          </div>
+        </div>
+      ) : (
+        /* TRADE PLAN view */
+        <div className="space-y-4">
+          {/* Signal Reasons */}
+          <div className="bg-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 mb-2">WHY THIS TRADE (Score: {plan.signal_score as number}, Strategy: {plan.strategy as string})</p>
+            <div className="space-y-1">
+              {reasons.map((r, i) => (
+                <p key={i} className="text-sm text-gray-300">
+                  <span className="text-green-400 mr-1">+</span> {r}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          {/* Option + Trade Plan */}
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* Option details */}
+            <div className="bg-gray-800 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-3">RECOMMENDED OPTION</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-gray-500">Strike:</span> <span className="font-bold">{symbol} {opt.strike as number} {opt.type as string}</span></div>
+                <div><span className="text-gray-500">Expiry:</span> <span className="font-mono">{opt.expiry as string} ({opt.dte as number} DTE)</span></div>
+                <div><span className="text-gray-500">Premium:</span> <span className="font-bold text-orange-400 font-mono">₹{opt.estimated_premium as number}</span></div>
+                <div><span className="text-gray-500">Delta:</span> <span className="font-mono">{(opt.delta as number)?.toFixed(3)}</span></div>
+                <div><span className="text-gray-500">IV:</span> <span className="font-mono">{(opt.iv as number)?.toFixed(1)}%</span></div>
+                <div><span className="text-gray-500">Moneyness:</span> {opt.moneyness as string}</div>
+              </div>
+            </div>
+
+            {/* P&L Plan */}
+            <div className="bg-gray-800 rounded-lg p-4">
+              <p className="text-xs text-gray-500 mb-3">TRADE PLAN</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div><span className="text-gray-500">Entry:</span> <span className="font-bold font-mono">₹{tradePlan.entry_premium as number}</span></div>
+                <div><span className="text-gray-500">Qty:</span> <span className="font-bold">{tradePlan.quantity as number} ({tradePlan.lot_size as number}/lot)</span></div>
+                <div><span className="text-gray-500">Stop Loss:</span> <span className="text-red-400 font-bold font-mono">₹{tradePlan.stop_loss as number}</span></div>
+                <div><span className="text-gray-500">Max Loss:</span> <span className="text-red-400 font-mono">₹{(tradePlan.max_loss as number)?.toLocaleString("en-IN")}</span></div>
+                <div><span className="text-gray-500">Target 1:</span> <span className="text-green-400 font-bold font-mono">₹{tradePlan.target_1 as number}</span></div>
+                <div><span className="text-gray-500">T1 Profit:</span> <span className="text-green-400 font-mono">₹{(tradePlan.target_1_profit as number)?.toLocaleString("en-IN")}</span></div>
+                <div><span className="text-gray-500">Target 2:</span> <span className="text-green-400 font-mono">₹{tradePlan.target_2 as number}</span></div>
+                <div><span className="text-gray-500">R:R:</span> <span className="font-bold">{tradePlan.risk_reward as number}x</span></div>
+                <div><span className="text-gray-500">Total Cost:</span> <span className="font-mono">₹{(tradePlan.total_cost as number)?.toLocaleString("en-IN")}</span></div>
+                <div><span className="text-gray-500">Risk:</span> <span className="font-mono">{tradePlan.risk_pct_of_capital as number}% of capital</span></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Checklist */}
+          <div className="bg-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 mb-2">PRE-TRADE CHECKLIST</p>
+            <div className="grid md:grid-cols-2 gap-1">
+              {checklist.map((c, i) => (
+                <div key={i} className={`flex items-center gap-2 text-sm ${c.critical ? "font-medium" : ""}`}>
+                  <span className={c.passed ? "text-green-400" : "text-red-400"}>{c.passed ? "PASS" : "FAIL"}</span>
+                  <span className={c.passed ? "text-gray-300" : "text-gray-500"}>{c.check}</span>
+                  {c.critical && !c.passed && <span className="text-red-400 text-[10px]">CRITICAL</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Warnings */}
+          {warnings.length > 0 && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
+              <p className="text-xs text-red-400 mb-2">WARNINGS</p>
+              {warnings.map((w, i) => (
+                <p key={i} className="text-sm text-red-300">- {w}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Exit Rules */}
+          <div className="bg-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 mb-2">EXIT RULES</p>
+            {exitRules.map((r, i) => (
+              <p key={i} className="text-sm text-gray-400">
+                <span className="text-orange-400 mr-1">{i + 1}.</span> {r}
+              </p>
+            ))}
+          </div>
+
+          {/* Avoid conditions */}
+          <div className="bg-gray-800 rounded-lg p-4">
+            <p className="text-xs text-gray-500 mb-2">DO NOT TRADE IF</p>
+            {avoidIf.map((a, i) => (
+              <p key={i} className="text-sm text-gray-500">- {a}</p>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StockRow({ sig, onRemove, showRemove = false, onClick, selected = false }: {
   sig: ScreenerSignal; onRemove?: () => void; showRemove?: boolean;
+  onClick?: () => void; selected?: boolean;
 }) {
   return (
-    <tr className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${
-      sig.score >= 80 ? "bg-green-500/5" : sig.score >= 60 ? "bg-orange-500/5" : ""
+    <tr onClick={onClick} className={`border-b border-gray-800/50 cursor-pointer transition ${
+      selected ? "bg-orange-500/10 ring-1 ring-orange-500/30" :
+      sig.score >= 80 ? "bg-green-500/5 hover:bg-green-500/10" :
+      sig.score >= 60 ? "bg-orange-500/5 hover:bg-orange-500/10" : "hover:bg-gray-800/30"
     }`}>
       <td className="py-1.5 px-2">
         <span className="font-medium">{sig.symbol}</span>
