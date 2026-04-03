@@ -6,7 +6,7 @@ Run with: uvicorn backend.app:app --reload --port 8000
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.routes import market, signals, trades, options, system, backtest, journal, alerts
+from backend.routes import market, signals, trades, options, system, backtest, journal, alerts, screener
 
 app = FastAPI(
     title="Trading Engine API",
@@ -32,6 +32,7 @@ app.include_router(system.router, prefix="/api/system", tags=["System"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["Backtest"])
 app.include_router(journal.router, prefix="/api/journal", tags=["Journal"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
+app.include_router(screener.router, prefix="/api/screener", tags=["Screener"])
 
 
 @app.get("/api/health")

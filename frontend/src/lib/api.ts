@@ -338,6 +338,46 @@ export const journal = {
 // ALERTS
 // ========================================================
 
+// ========================================================
+// SCREENER
+// ========================================================
+
+export interface ScreenerSignal {
+  symbol: string;
+  yahoo: string;
+  sector: string;
+  lot_size: number;
+  price: number;
+  change_pct: number;
+  direction: string;
+  score: number;
+  strength: string;
+  strategy: string;
+  reasons: string[];
+  rsi: number | null;
+  adx: number | null;
+  above_vwap: boolean | null;
+  supertrend: string | null;
+  volume_ratio: number | null;
+}
+
+export const screener = {
+  stocks: (sector?: string) =>
+    fetcher<{ stocks: { symbol: string; yahoo: string; lot_size: number; sector: string }[]; count: number }>(
+      `/screener/stocks${sector ? `?sector=${sector}` : ""}`
+    ),
+  sectors: () =>
+    fetcher<{ sectors: { name: string; count: number }[] }>("/screener/sectors"),
+  scan: (sector?: string, minScore = 50, limit = 50) =>
+    fetcher<{ signals: ScreenerSignal[]; count: number; scanned: number; errors: number }>(
+      `/screener/scan?min_score=${minScore}&limit=${limit}${sector ? `&sector=${sector}` : ""}`
+    ),
+  topMovers: () =>
+    fetcher<{ gainers: { symbol: string; sector: string; price: number; change_pct: number }[]; losers: { symbol: string; sector: string; price: number; change_pct: number }[] }>(
+      "/screener/top-movers"
+    ),
+};
+
 export const alerts = {
   test: () => fetcher<{ success: boolean; channels: string[] }>("/alerts/test"),
   history: () => fetcher<{ alerts: { time: string; message: string; category: string }[] }>("/alerts/history"),

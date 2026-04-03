@@ -9,7 +9,8 @@ const navItems = [
   { href: "/options", label: "Options Chain", icon: "📈" },
   { href: "/trades", label: "Trade Journal", icon: "💰" },
   { href: "/backtest", label: "Backtest", icon: "🧪" },
-  { href: "/scanner", label: "Scanner", icon: "🔍" },
+  { href: "/screener2", label: "F&O Screener", icon: "🔍" },
+  { href: "/scanner", label: "Calculator", icon: "🧮" },
 ];
 
 export default function Sidebar() {
