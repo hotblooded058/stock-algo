@@ -111,6 +111,26 @@ def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # ---- Volume Moving Average ----
     df['Vol_MA_20'] = df['Volume'].rolling(window=20).mean()
 
+    # ---- VWAP ----
+    try:
+        typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+        cumulative_tp_vol = (typical_price * df['Volume']).cumsum()
+        cumulative_vol = df['Volume'].cumsum()
+        df['VWAP'] = cumulative_tp_vol / cumulative_vol
+    except Exception:
+        pass
+
+    # ---- ADX (Average Directional Index) ----
+    try:
+        adx_ind = ta.trend.ADXIndicator(
+            high=df['High'], low=df['Low'], close=df['Close'], window=14
+        )
+        df['ADX'] = adx_ind.adx()
+        df['DI_plus'] = adx_ind.adx_pos()
+        df['DI_minus'] = adx_ind.adx_neg()
+    except Exception:
+        pass
+
     # ---- Derived Signals ----
     df['EMA_9_above_21'] = (df['EMA_9'] > df['EMA_21']).astype(int)
     df['EMA_9_cross_21'] = df['EMA_9_above_21'].diff().fillna(0)
@@ -155,6 +175,34 @@ def get_latest_indicators(df: pd.DataFrame) -> dict:
         'ema_bearish_cross': latest.get('EMA_9_cross_21', 0) < 0,
         'high_volume': bool(latest.get('High_Volume', 0)),
     }
+
+    # VWAP
+    if 'VWAP' in df.columns:
+        result['vwap'] = latest.get('VWAP')
+        result['above_vwap'] = bool(latest['Close'] > latest['VWAP']) if latest.get('VWAP') else None
+
+    # ADX
+    if 'ADX' in df.columns:
+        result['adx'] = latest.get('ADX')
+        result['di_plus'] = latest.get('DI_plus')
+        result['di_minus'] = latest.get('DI_minus')
+        adx_val = latest.get('ADX')
+        if adx_val is not None:
+            result['trending'] = bool(adx_val > 25)
+            result['strong_trend'] = bool(adx_val > 30)
+            result['choppy'] = bool(adx_val < 20)
+        else:
+            result['trending'] = None
+            result['strong_trend'] = None
+            result['choppy'] = None
+
+    # Volume ratio
+    if 'Vol_MA_20' in df.columns and latest.get('Vol_MA_20') and latest['Vol_MA_20'] > 0:
+        result['vol_ma_20'] = latest['Vol_MA_20']
+        result['volume_ratio'] = latest['Volume'] / latest['Vol_MA_20']
+    else:
+        result['vol_ma_20'] = None
+        result['volume_ratio'] = None
 
     # SuperTrend
     if 'SuperTrend_dir' in df.columns:
